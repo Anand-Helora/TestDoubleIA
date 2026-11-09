@@ -49,30 +49,49 @@
     return free[idx];
   }
 
-  /** Crée un nouvel état de partie. */
+  function isPositiveInt(n) {
+    return typeof n === 'number' && n >= 1 && Math.floor(n) === n;
+  }
+
+  /**
+   * Crée un nouvel état de partie.
+   * Dimensions et longueur doivent être des entiers ≥ 1 (sinon RangeError).
+   * La longueur initiale est ramenée à la largeur de la grille, et le serpent
+   * est toujours placé entièrement dans la grille, sur la ligne centrale.
+   */
   function createGame(options) {
     options = options || {};
-    var cols = options.cols || 20;
-    var rows = options.rows || 20;
+    var cols = options.cols === undefined ? 20 : options.cols;
+    var rows = options.rows === undefined ? 20 : options.rows;
+    var initialLength = options.initialLength === undefined ? 3 : options.initialLength;
     var random = options.random || Math.random;
-    var initialLength = options.initialLength || 3;
 
-    var cx = Math.floor(cols / 2);
+    if (!isPositiveInt(cols) || !isPositiveInt(rows)) {
+      throw new RangeError('cols et rows doivent être des entiers ≥ 1');
+    }
+    if (!isPositiveInt(initialLength)) {
+      throw new RangeError('initialLength doit être un entier ≥ 1');
+    }
+    initialLength = Math.min(initialLength, cols);
+
+    // Tête au centre, sauf si la queue sortirait de la grille par la gauche.
+    var headX = Math.max(Math.floor(cols / 2), initialLength - 1);
     var cy = Math.floor(rows / 2);
     var snake = [];
     for (var i = 0; i < initialLength; i++) {
-      snake.push({ x: cx - i, y: cy }); // tête en premier, orientée vers la droite
+      snake.push({ x: headX - i, y: cy }); // tête en premier, orientée vers la droite
     }
 
+    var food = spawnFood(cols, rows, snake, random);
     return {
       cols: cols,
       rows: rows,
       snake: snake,
       direction: 'right',
       queue: [],
-      food: spawnFood(cols, rows, snake, random),
+      food: food,
       score: 0,
-      status: 'playing', // 'playing' | 'over' | 'won'
+      status: food === null ? 'won' : 'playing', // 'playing' | 'over' | 'won'
       random: random
     };
   }

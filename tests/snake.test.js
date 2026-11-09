@@ -11,7 +11,12 @@ function makeState(snake, food, direction, opts = {}) {
   st.snake = snake.map(([x, y]) => ({ x, y }));
   st.food = food ? { x: food[0], y: food[1] } : null;
   st.direction = direction || 'right';
+  st.status = 'playing';
   return st;
+}
+
+function insideGrid(st) {
+  return st.snake.every((c) => c.x >= 0 && c.y >= 0 && c.x < st.cols && c.y < st.rows);
 }
 
 test('état initial : serpent de 3 cases, score 0, pomme hors du serpent', () => {
@@ -160,4 +165,62 @@ test('correspondance des touches : flèches, ZQSD et WASD, majuscules incluses',
   assert.equal(S.keyToDirection('x'), null);
   assert.equal(S.keyToDirection('Enter'), null);
   assert.equal(S.keyToDirection(undefined), null);
+});
+
+// --- Petites grilles et options invalides (non-régression rapport Codex, P3) ---
+
+test('petite grille 3×1 : serpent entièrement dans la grille, partie gagnée d\'emblée', () => {
+  const st = S.createGame({ cols: 3, rows: 1 });
+  assert.deepEqual(st.snake, [{ x: 2, y: 0 }, { x: 1, y: 0 }, { x: 0, y: 0 }]);
+  assert.ok(insideGrid(st));
+  assert.equal(st.food, null);
+  assert.equal(st.status, 'won');
+});
+
+test('initialLength plus grand que la largeur : ramené à la largeur', () => {
+  const st = S.createGame({ cols: 4, rows: 4, initialLength: 10 });
+  assert.equal(st.snake.length, 4);
+  assert.ok(insideGrid(st));
+  assert.equal(st.status, 'playing');
+  assert.ok(st.food && !st.snake.some((c) => c.x === st.food.x && c.y === st.food.y));
+});
+
+test('toutes les petites grilles de 1×1 à 6×6 démarrent dans un état valide', () => {
+  for (let cols = 1; cols <= 6; cols++) {
+    for (let rows = 1; rows <= 6; rows++) {
+      for (let len = 1; len <= 4; len++) {
+        const st = S.createGame({ cols, rows, initialLength: len });
+        const label = `${cols}×${rows} longueur ${len}`;
+        assert.ok(insideGrid(st), label);
+        assert.equal(new Set(st.snake.map((c) => `${c.x},${c.y}`)).size, st.snake.length, label);
+        if (st.food === null) {
+          assert.equal(st.status, 'won', label);
+          assert.equal(st.snake.length, cols * rows, label);
+        } else {
+          assert.equal(st.status, 'playing', label);
+          assert.ok(!st.snake.some((c) => c.x === st.food.x && c.y === st.food.y), label);
+        }
+      }
+    }
+  }
+});
+
+test('une partie gagnée d\'emblée ne bouge pas', () => {
+  const st = S.createGame({ cols: 2, rows: 1, initialLength: 2 });
+  assert.equal(st.status, 'won');
+  S.step(st);
+  assert.deepEqual(st.snake, [{ x: 1, y: 0 }, { x: 0, y: 0 }]);
+});
+
+test('options invalides : RangeError', () => {
+  for (const opts of [{ cols: 0 }, { rows: -1 }, { cols: 2.5 }, { cols: '20' }, { cols: NaN }, { initialLength: 0 }, { initialLength: 1.5 }]) {
+    assert.throws(() => S.createGame(opts), RangeError, JSON.stringify(opts));
+  }
+});
+
+test('valeurs par défaut inchangées : 20×20, longueur 3, au centre', () => {
+  const st = S.createGame({ random: () => 0 });
+  assert.equal(st.cols, 20);
+  assert.equal(st.rows, 20);
+  assert.deepEqual(st.snake, [{ x: 10, y: 10 }, { x: 9, y: 10 }, { x: 8, y: 10 }]);
 });
