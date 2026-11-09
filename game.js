@@ -1,6 +1,7 @@
 /*
  * Interface navigateur du jeu Snake : rendu canvas, clavier, score, boucle.
- * S'appuie sur la logique pure exposée par snake.js (global SnakeLogic).
+ * S'appuie sur la logique pure exposée par snake.js (global SnakeLogic)
+ * et sur le meilleur score persistant de best-score.js (global BestScore).
  */
 (function () {
   'use strict';
@@ -12,6 +13,7 @@
   var canvas = document.getElementById('board');
   var ctx = canvas.getContext('2d');
   var scoreEl = document.getElementById('score');
+  var bestEl = document.getElementById('best');
   var messageEl = document.getElementById('message');
   var overlay = document.getElementById('overlay');
   var overlayTitle = document.getElementById('overlay-title');
@@ -21,6 +23,10 @@
   var timer = null;   // un seul minuteur actif à la fois
   var started = false;
   var paused = false;
+
+  // Record persistant ; reste en mémoire si localStorage est indisponible.
+  var best = BestScore.createTracker(BestScore.getStorage(window));
+  var bestAtStart = 0; // record au début de la partie, pour signaler un nouveau record
 
   var cell = canvas.width / COLS;
 
@@ -41,6 +47,7 @@
     state = SnakeLogic.createGame({ cols: COLS, rows: ROWS });
     started = false;
     paused = false;
+    bestAtStart = best.get();
     overlay.hidden = true;
     updateScore();
     setMessage('Appuyez sur une flèche (ou ZQSD / WASD) pour commencer.');
@@ -59,7 +66,8 @@
     stopLoop();
     overlayTitle.textContent = state.status === 'won' ? 'Victoire !' : 'Partie terminée';
     overlay.hidden = false;
-    setMessage('Score final : ' + state.score + '. Appuyez sur Entrée ou cliquez sur « Recommencer ».');
+    var record = state.score > bestAtStart ? ' Nouveau record !' : '';
+    setMessage('Score final : ' + state.score + '.' + record + ' Appuyez sur Entrée ou cliquez sur « Recommencer ».');
     restartBtn.focus();
   }
 
@@ -77,7 +85,9 @@
   }
 
   function updateScore() {
+    best.update(state.score); // met à jour et enregistre dès que le record est dépassé
     scoreEl.textContent = String(state.score);
+    bestEl.textContent = String(best.get());
   }
 
   function setMessage(text) {

@@ -10,8 +10,11 @@ Prérequis : pip install playwright && playwright install chromium
 Lancement : python3 tests/browser_check.py [--runs N] [--browser chromium|firefox|webkit] [--screenshot F.png]
 """
 import argparse
+import functools
+import http.server
 import pathlib
 import sys
+import threading
 
 from playwright.sync_api import sync_playwright
 
@@ -91,6 +94,7 @@ def scenario(run):
     before = run.state()
     run.ticks(1)
     st = run.state()
+    run.check("record affiché mis à jour avec le score", page.text_content("#best") == str(st["score"]))
     run.check("pomme mangée : score +1 (affiché)",
               st["score"] == before["score"] + 1 and page.text_content("#score") == str(st["score"]))
     run.check("pomme mangée : longueur +1", len(st["snake"]) == len(before["snake"]) + 1)
@@ -186,6 +190,116 @@ def scenario(run):
     run.check("aucune erreur console sur l'ensemble du parcours", not errors)
 
 
+BEST_KEY = "snake.bestScore"
+
+STORAGE_BLOCKED_SCRIPTS = {
+    # Stockage présent mais toutes les opérations échouent (quota, politique…)
+    "méthodes Storage qui lèvent": """
+        Storage.prototype.getItem = function () { throw new DOMException('bloqué', 'SecurityError'); };
+        Storage.prototype.setItem = function () { throw new DOMException('plein', 'QuotaExceededError'); };
+    """,
+    # Le simple accès à window.localStorage lève (cookies bloqués, iframe sandboxée)
+    "accès à localStorage qui lève": """
+        try {
+          Object.defineProperty(window, 'localStorage', {
+            configurable: true,
+            get: function () { throw new DOMException('bloqué', 'SecurityError'); }
+          });
+        } catch (e) {}
+    """,
+}
+
+
+def start_server():
+    """Serveur HTTP local : origine stable pour tester la persistance localStorage."""
+    handler = functools.partial(QuietHandler, directory=str(ROOT))
+    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), handler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    return server, f"http://127.0.0.1:{server.server_address[1]}/index.html?test"
+
+
+class QuietHandler(http.server.SimpleHTTPRequestHandler):
+    def log_message(self, *args):
+        pass
+
+
+def open_page(browser, url, extra_script=None):
+    context = browser.new_context()
+    page = context.new_page()
+    errors = []
+    page.on("pageerror", lambda e: errors.append(str(e)))
+    page.clock.install()
+    page.add_init_script(INIT_SCRIPT)
+    if extra_script:
+        page.add_init_script(extra_script)
+    page.goto(url)
+    return context, page, errors
+
+
+def eat(run, n):
+    """Démarre si besoin et fait manger n pommes en montant depuis le bas du plateau."""
+    run.page.keyboard.press("ArrowUp")
+    run.setup([[10, 15], [10, 16], [10, 17]], [0, 0], "up")
+    for _ in range(n):
+        head = run.state()["snake"][0]
+        run.page.evaluate("([x, y]) => { window.__snake.getState().food = {x, y}; }", [head["x"], head["y"] - 1])
+        run.ticks(1)
+
+
+def storage_scenarios(browser, url):
+    """Meilleur score : persistance, valeurs corrompues, stockage bloqué (Issue #3)."""
+    failed = 0
+
+    # Persistance entre deux chargements de la page
+    context, page, errors = open_page(browser, url)
+    run = Run(page)
+    run.check("record initial à 0", page.text_content("#best") == "0")
+    eat(run, 3)
+    run.check("record 3 affiché immédiatement en cours de partie",
+              page.text_content("#best") == "3" and run.state()["status"] == "playing")
+    run.check("record enregistré dans localStorage",
+              page.evaluate(f"localStorage.getItem('{BEST_KEY}')") == "3")
+    page.reload()
+    run.check("record relu après rechargement", page.text_content("#best") == "3")
+    eat(run, 1)
+    run.check("score plus faible : record inchangé", page.text_content("#best") == "3")
+
+    # Valeurs corrompues ou négatives
+    for raw in ["-5", "abc", "2.5", "Infinity"]:
+        page.evaluate(f"localStorage.setItem('{BEST_KEY}', {raw!r})")
+        page.reload()
+        ok = page.text_content("#best") == "0"
+        eat(run, 1)
+        ok = ok and page.evaluate(f"localStorage.getItem('{BEST_KEY}')") == "1"
+        run.check(f"valeur stockée {raw!r} refusée (record 0), puis remplacée", ok)
+    run.check("aucune erreur JS (persistance)", not errors)
+    failed += sum(not ok for _, ok in run.results)
+    context.close()
+
+    # Stockage indisponible : le jeu reste jouable
+    for label, script in STORAGE_BLOCKED_SCRIPTS.items():
+        context, page, errors = open_page(browser, url, script)
+        run = Run(page)
+        blocked = page.evaluate("""() => { try { localStorage.getItem('x'); return false; }
+                                           catch (e) { return true; } }""")
+        run.check(f"{label} : blocage simulé effectif", blocked)
+        run.check(f"{label} : page chargée, record 0", page.text_content("#best") == "0")
+        eat(run, 2)
+        run.check(f"{label} : score et record mis à jour en mémoire",
+                  page.text_content("#score") == "2" and page.text_content("#best") == "2")
+        run.setup([[10, 1], [10, 2], [10, 3]], [0, 0], "up")
+        run.ticks(2)
+        run.check(f"{label} : fin de partie et « Nouveau record ! »",
+                  run.state()["status"] == "over" and "Nouveau record" in page.text_content("#message"))
+        page.click("#restart")
+        run.check(f"{label} : redémarrage, record conservé",
+                  page.text_content("#score") == "0" and page.text_content("#best") == "2")
+        run.check(f"{label} : aucune erreur JS", not errors)
+        failed += sum(not ok for _, ok in run.results)
+        context.close()
+    return failed
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--runs", type=int, default=1)
@@ -206,6 +320,11 @@ def main():
             print(f"  → {len(run.results) - len(failed)}/{len(run.results)} vérifications réussies")
             total_failed += len(failed)
             page.close()
+
+        server, http_url = start_server()
+        print(f"Meilleur score et stockage ({args.browser}, {http_url})")
+        total_failed += storage_scenarios(browser, http_url)
+        server.shutdown()
 
         # Hors mode test, aucun crochet global n'est exposé.
         page = browser.new_page()

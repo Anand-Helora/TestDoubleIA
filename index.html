@@ -10,7 +10,10 @@
   <main class="app">
     <header class="bar">
       <h1>Snake</h1>
-      <p class="score">Score : <span id="score" aria-live="polite">0</span></p>
+      <div class="scores">
+        <p class="score">Score : <span id="score" aria-live="polite">0</span></p>
+        <p class="score best">Record : <span id="best">0</span></p>
+      </div>
     </header>
 
     <div class="board-wrap">
@@ -32,6 +35,7 @@
   </main>
 
   <script src="snake.js"></script>
+  <script src="best-score.js"></script>
   <script src="game.js"></script>
 </body>
 </html>
