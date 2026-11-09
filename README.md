@@ -64,3 +64,9 @@ Le workflow `.github/workflows/tests.yml` s'exécute sur chaque pull request ver
 Les journaux, captures et le rapport JUnit sont publiés comme artefacts.
 
 Le crochet de test `window.__snake` n'est exposé qu'en ouvrant `index.html?test`.
+
+## Automatisation multi-IA
+
+- `.github/workflows/codex-feedback-dryrun.yml` : détection **en lecture seule** des anomalies signalées
+  par Codex sur les PR ouvertes (Issue #5, phase A). Aucune correction automatique, aucun secret,
+  aucune permission d'écriture. Voir [docs/codex-feedback-dryrun.md](docs/codex-feedback-dryrun.md).

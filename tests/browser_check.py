@@ -15,6 +15,7 @@ import http.server
 import pathlib
 import sys
 import threading
+import time
 
 from playwright.sync_api import sync_playwright
 
@@ -25,6 +26,28 @@ TICK = 120  # ms, doit correspondre à TICK_MS dans game.js
 # Math.random() = 0 : chaque nouvelle pomme va sur la première case libre,
 # (0,0) en pratique, loin des trajets utilisés par les scénarios (colonne x=10).
 INIT_SCRIPT = "Math.random = function () { return 0; };"
+
+# Horloge simulée : après install(), le temps continue de s'écouler au rythme
+# réel tant que pause_at() n'est pas appelé. Sans pause, les ticks du jeu peuvent
+# survenir entre deux étapes du test quand le navigateur est lent (échec
+# intermittent observé sous Firefox en CI). On fige donc le temps après le
+# chargement : seul run_for() le fait avancer.
+CLOCK_START_S = 1_700_000_000  # l'API Python de Playwright attend des secondes
+
+
+def install_frozen_clock(page):
+    page.clock.install(time=CLOCK_START_S)
+
+
+def freeze_clock(page):
+    # Instant courant de la page + marge : à appeler après chaque chargement.
+    page.clock.pause_at(page.evaluate("Date.now()") / 1000 + 1)
+
+
+def clock_is_frozen(page):
+    t1 = page.evaluate("Date.now()")
+    time.sleep(0.3)
+    return page.evaluate("Date.now()") == t1
 
 
 class Run:
@@ -61,9 +84,11 @@ def scenario(run):
     errors = []
     page.on("pageerror", lambda e: errors.append(str(e)))
     page.on("console", lambda m: errors.append(m.text) if m.type == "error" else None)
-    page.clock.install()
+    install_frozen_clock(page)
     page.add_init_script(INIT_SCRIPT)
     page.goto(URL)
+    freeze_clock(page)
+    run.check("horloge simulée figée (seul run_for fait avancer le temps)", clock_is_frozen(page))
 
     # 1. Chargement
     st = run.state()
@@ -228,11 +253,12 @@ def open_page(browser, url, extra_script=None):
     page = context.new_page()
     errors = []
     page.on("pageerror", lambda e: errors.append(str(e)))
-    page.clock.install()
+    install_frozen_clock(page)
     page.add_init_script(INIT_SCRIPT)
     if extra_script:
         page.add_init_script(extra_script)
     page.goto(url)
+    freeze_clock(page)
     return context, page, errors
 
 
@@ -260,6 +286,8 @@ def storage_scenarios(browser, url):
     run.check("record enregistré dans localStorage",
               page.evaluate(f"localStorage.getItem('{BEST_KEY}')") == "3")
     page.reload()
+    freeze_clock(page)
+    run.check("horloge figée après rechargement", clock_is_frozen(page))
     run.check("record relu après rechargement", page.text_content("#best") == "3")
     eat(run, 1)
     run.check("score plus faible : record inchangé", page.text_content("#best") == "3")
@@ -268,6 +296,7 @@ def storage_scenarios(browser, url):
     for raw in ["-5", "abc", "2.5", "Infinity"]:
         page.evaluate(f"localStorage.setItem('{BEST_KEY}', {raw!r})")
         page.reload()
+        freeze_clock(page)
         ok = page.text_content("#best") == "0"
         eat(run, 1)
         ok = ok and page.evaluate(f"localStorage.getItem('{BEST_KEY}')") == "1"

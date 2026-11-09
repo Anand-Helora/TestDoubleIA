@@ -1,0 +1,80 @@
+{
+  "description": "Résumé Codex en cours sur le SHA courant",
+  "eventName": "issue_comment",
+  "payload": {
+    "action": "created",
+    "issue": {
+      "number": 7,
+      "state": "open",
+      "pull_request": {
+        "url": "https://api.github.com/repos/Anand-Helora/TestDoubleIA/pulls/7"
+      }
+    },
+    "comment": {
+      "id": 901,
+      "user": {
+        "login": "chatgpt-codex-connector[bot]",
+        "id": 199175422,
+        "type": "Bot"
+      },
+      "performed_via_github_app": {
+        "id": 1144995,
+        "slug": "chatgpt-codex-connector",
+        "name": "ChatGPT Codex Connector",
+        "owner": {
+          "login": "openai"
+        }
+      },
+      "body": "<!-- codex-pull-request-review-summary -->\n<!-- codex-review-state:v1 {\"code_review\":{\"commit_sha\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"has_any_findings\":null,\"has_unresolved_findings\":null,\"status\":\"in_progress\"},\"security_review\":{\"commit_sha\":null,\"has_any_findings\":null,\"has_unresolved_findings\":null,\"status\":null}} -->\n\n<details>\n<summary><strong>Codex Review Summary</strong>: ✅ Completed</summary>\n</details>",
+      "created_at": "2026-11-09T21:48:46Z",
+      "updated_at": "2026-11-09T21:49:54Z",
+      "html_url": "https://github.com/Anand-Helora/TestDoubleIA/pull/7#issuecomment-901"
+    },
+    "repository": {
+      "full_name": "Anand-Helora/TestDoubleIA"
+    }
+  },
+  "api": {
+    "repo": "Anand-Helora/TestDoubleIA",
+    "pr": {
+      "number": 7,
+      "state": "open",
+      "head": {
+        "sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "ref": "claude/demo",
+        "repo": {
+          "full_name": "Anand-Helora/TestDoubleIA"
+        }
+      }
+    },
+    "issueComments": [
+      {
+        "id": 901,
+        "user": {
+          "login": "chatgpt-codex-connector[bot]",
+          "id": 199175422,
+          "type": "Bot"
+        },
+        "performed_via_github_app": {
+          "id": 1144995,
+          "slug": "chatgpt-codex-connector",
+          "name": "ChatGPT Codex Connector",
+          "owner": {
+            "login": "openai"
+          }
+        },
+        "body": "<!-- codex-pull-request-review-summary -->\n<!-- codex-review-state:v1 {\"code_review\":{\"commit_sha\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"has_any_findings\":null,\"has_unresolved_findings\":null,\"status\":\"in_progress\"},\"security_review\":{\"commit_sha\":null,\"has_any_findings\":null,\"has_unresolved_findings\":null,\"status\":null}} -->\n\n<details>\n<summary><strong>Codex Review Summary</strong>: ✅ Completed</summary>\n</details>",
+        "created_at": "2026-11-09T21:48:46Z",
+        "updated_at": "2026-11-09T21:49:54Z",
+        "html_url": "https://github.com/Anand-Helora/TestDoubleIA/pull/7#issuecomment-901"
+      }
+    ],
+    "reviews": [],
+    "reviewComments": [],
+    "threads": {}
+  },
+  "expected": {
+    "decision": "UNVERIFIED",
+    "reason": "REVIEW_IN_PROGRESS"
+  }
+}

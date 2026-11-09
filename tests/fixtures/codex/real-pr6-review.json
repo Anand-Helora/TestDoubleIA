@@ -1,0 +1,193 @@
+{
+  "description": "Données réelles de la PR #6 : revue Codex de e1bcd54 avec deux remarques P2 (fils supposés non résolus)",
+  "eventName": "pull_request_review",
+  "payload": {
+    "action": "submitted",
+    "review": {
+      "commit_id": "e1bcd54c6d4a52bcd63a265758b3fb93a716e443",
+      "html_url": "https://github.com/Anand-Helora/TestDoubleIA/pull/6#pullrequestreview-5833652385",
+      "id": 5833652385,
+      "state": "COMMENTED",
+      "submitted_at": "2026-11-09T22:20:19Z",
+      "user": {
+        "id": 199175422,
+        "login": "chatgpt-codex-connector[bot]",
+        "type": "Bot"
+      }
+    },
+    "pull_request": {
+      "number": 6,
+      "state": "open"
+    }
+  },
+  "api": {
+    "repo": "Anand-Helora/TestDoubleIA",
+    "pr": {
+      "head": {
+        "sha": "e1bcd54c6d4a52bcd63a265758b3fb93a716e443"
+      },
+      "number": 6,
+      "state": "open"
+    },
+    "issueComments": [
+      {
+        "body": "To use Codex here, [create an environment for this repo](https://chatgpt.com/codex/cloud/settings/environments).",
+        "created_at": "2026-11-09T22:06:45Z",
+        "html_url": "https://github.com/Anand-Helora/TestDoubleIA/pull/6#issuecomment-6752729700",
+        "id": 6752729700,
+        "performed_via_github_app": {
+          "id": 1144995,
+          "slug": "chatgpt-codex-connector"
+        },
+        "updated_at": "2026-11-09T22:06:45Z",
+        "user": {
+          "id": 199175422,
+          "login": "chatgpt-codex-connector[bot]",
+          "type": "Bot"
+        }
+      },
+      {
+        "body": "## Coordination ChatGPT — audit de la phase A (lecture seule)\n\n**Statut vérifié** : PR #6 ouverte sur `claude/codex-feedback-dryrun`, tête `e1bcd54c6d4a52bcd63a265758b3fb93a716e443`, pas de fusion. Le run [42708804468](https://github.com/Anand-Helora/TestDoubleIA/actions/runs/42708804468) est `success` : **100/100 tests Node** et les trois jobs navigateurs réussis.\n\n**Portée vérifiée** : `.github/workflows/codex-feedback-dryrun.yml` possède des permissions GitHub en lecture seule (`contents/pull-requests/issues: read`) ; checkout de `main` pour les événements, aucune action corrective, aucun secret ni modification de code via le workflow. Cette phase A prépare seulement un signal `WOULD_REQUEST_CLAUDE_FIX`.\n\n**Point à régler avant de conclure à une revue Codex opérationnelle** : le seul commentaire Codex observé ici est [« create an environment for this repo »](https://github.com/Anand-Helora/TestDoubleIA/pull/6#issuecomment-6752729700), **pas** une revue achevée. Vérifier/configurer l'environnement Codex Cloud pour ce dépôt, puis obtenir une vraie revue de cette PR avant de fusionner. Ne pas prétendre que Codex a validé cette PR.\n\n**Limites à conserver** : la clé d'idempotence n'est **pas persistée entre les exécutions** de la phase A ; ne pas activer la phase B avant déduplication durable et limitation fiable des cycles. Le déclenchement du nouveau workflow sur les événements Codex n'est pas encore testé en production : son fonctionnement nécessite la présence du workflow sur la branche par défaut après fusion. Après revue et accord humain de fusion, tester d'abord `workflow_dispatch` sur une fixture, puis sur un événement Codex réel d'une PR de test.\n\n**Aucune fusion, aucune activation de correction automatique à ce stade.**",
+        "created_at": "2026-11-09T22:15:11Z",
+        "html_url": "https://github.com/Anand-Helora/TestDoubleIA/pull/6#issuecomment-6752902992",
+        "id": 6752902992,
+        "performed_via_github_app": {
+          "id": 1144995,
+          "slug": "chatgpt-codex-connector"
+        },
+        "updated_at": "2026-11-09T22:15:11Z",
+        "user": {
+          "id": 215965260,
+          "login": "Anand-Helora",
+          "type": "User"
+        }
+      },
+      {
+        "body": "@codex review",
+        "created_at": "2026-11-09T22:18:26Z",
+        "html_url": "https://github.com/Anand-Helora/TestDoubleIA/pull/6#issuecomment-6752967912",
+        "id": 6752967912,
+        "performed_via_github_app": {
+          "id": 1144995,
+          "slug": "chatgpt-codex-connector"
+        },
+        "updated_at": "2026-11-09T22:18:26Z",
+        "user": {
+          "id": 215965260,
+          "login": "Anand-Helora",
+          "type": "User"
+        }
+      },
+      {
+        "body": "<!-- codex-pull-request-review-summary -->\n<!-- codex-review-state:v1 {\"code_review\":{\"commit_sha\":\"e1bcd54c6d4a52bcd63a265758b3fb93a716e443\",\"has_any_findings\":true,\"has_unresolved_findings\":true,\"status\":\"completed\"},\"security_review\":{\"commit_sha\":null,\"has_any_findings\":null,\"has_unresolved_findings\":null,\"status\":null}} -->\n\n<details>\n<summary><strong>Codex Review Summary</strong>: ✅ Completed</summary>\n\nThis comment shows the latest Codex review activity on this pull request.\n\n| Review | Status | Commit | Review trigger |\n| --- | --- | --- | --- |\n| 📝 **Code Review** | ✅ **Completed** <relative-time datetime=\"2026-11-09T22:32:16.361145Z\">2026-11-09T22:32:16.361145Z</relative-time> | `e1bcd54` | Manual request |\n\n\n\n<details> <summary>ℹ️ About Codex in GitHub</summary>\n<br/>\n\n[Your team has set up Codex to review pull requests in this repo](https://chatgpt.com/codex/cloud/settings/general). Reviews are triggered when you\n- Open a pull request for review\n- Mark a draft as ready\n- Comment \"@codex review\" or \"@codex security review\".\n\nCodex reacts with 👀 while any review is running, comments if it has suggestions, and reacts with 👍 once all reviews finish with no findings.\n\n</details>\n\n</details>",
+        "created_at": "2026-11-09T22:18:40Z",
+        "html_url": "https://github.com/Anand-Helora/TestDoubleIA/pull/6#issuecomment-6752972286",
+        "id": 6752972286,
+        "performed_via_github_app": {
+          "id": 1144995,
+          "slug": "chatgpt-codex-connector"
+        },
+        "updated_at": "2026-11-09T22:32:17Z",
+        "user": {
+          "id": 199175422,
+          "login": "chatgpt-codex-connector[bot]",
+          "type": "Bot"
+        }
+      },
+      {
+        "body": "## Coordination ChatGPT — corrections demandées après revue Codex\n\nL'environnement Codex est désormais opérationnel. La revue manuelle `@codex review` sur le commit `e1bcd54c6d4a52bcd63a265758b3fb93a716e443` est terminée et signale **deux P2 non résolus** :\n\n1. [P2 — Clé d'idempotence instable lors de la finalisation du résumé](https://github.com/Anand-Helora/TestDoubleIA/pull/6#discussion_r4518670008) : une même anomalie relevée d'abord en commentaire inline puis dans le résumé final engendre une nouvelle clé, alors qu'il ne s'agit pas d'une nouvelle anomalie. Normaliser l'identité d'une observation entre les signaux et ajouter un test de non-duplication dans cet ordre chronologique.\n2. [P2 — Détection de contradictions entre sections de revue](https://github.com/Anand-Helora/TestDoubleIA/pull/6#discussion_r4518670017) : des commentaires résolus de `code_review` peuvent masquer une anomalie non résolue indépendante de `security_review`. Corréler les fils avec leur section ou supprimer toute contradiction non démontrée, et ajouter un test de régression couvrant les deux sections.\n\n**À Claude Code, sur la même branche `claude/codex-feedback-dryrun` :** corriger ces deux défauts, étendre les fixtures/tests, conserver le fonctionnement en lecture seule sans secret ni permissions d'écriture, pousser les commits dans la PR #6 et laisser tourner les quatre jobs GitHub Actions. Ne pas fusionner ni activer la phase B. Documenter tout compromis technique.\n\n**À Codex, ensuite** : refaire une revue sur le nouveau SHA pour vérifier que les deux points sont effectivement corrigés. La fusion reste une décision humaine.\n\nLa première revue Codex a été déclenchée par commentaire manuel ; cela démontre l'environnement opérationnel, pas encore une correction automatique ni la détection en production du nouveau workflow.",
+        "created_at": "2026-11-09T22:30:45Z",
+        "html_url": "https://github.com/Anand-Helora/TestDoubleIA/pull/6#issuecomment-6753218214",
+        "id": 6753218214,
+        "performed_via_github_app": {
+          "id": 1144995,
+          "slug": "chatgpt-codex-connector"
+        },
+        "updated_at": "2026-11-09T22:30:45Z",
+        "user": {
+          "id": 215965260,
+          "login": "Anand-Helora",
+          "type": "User"
+        }
+      },
+      {
+        "body": "<!-- codex-review-receipt:v1 -->\n\nCodex Review: Didn't find any major issues. Bravo.\n\n**Reviewed commit:** `e1bcd54c6d`\n\n<details> <summary>ℹ️ About Codex in GitHub</summary>\n<br/>\n\n[Your team has set up Codex to review pull requests in this repo](https://chatgpt.com/codex/cloud/settings/general). Reviews are triggered when you\n- Open a pull request for review\n- Mark a draft as ready\n- Comment \"@codex review\".\n\nIf Codex has suggestions, it will comment; otherwise it will react with 👍.\n\n\n\n\nCodex can also answer questions or update the PR. Try commenting \"@codex address that feedback\".\n            \n</details>",
+        "created_at": "2026-11-09T22:32:15Z",
+        "html_url": "https://github.com/Anand-Helora/TestDoubleIA/pull/6#issuecomment-6753246695",
+        "id": 6753246695,
+        "performed_via_github_app": {
+          "id": 1144995,
+          "slug": "chatgpt-codex-connector"
+        },
+        "updated_at": "2026-11-09T22:32:15Z",
+        "user": {
+          "id": 199175422,
+          "login": "chatgpt-codex-connector[bot]",
+          "type": "Bot"
+        }
+      }
+    ],
+    "reviews": [
+      {
+        "commit_id": "e1bcd54c6d4a52bcd63a265758b3fb93a716e443",
+        "html_url": "https://github.com/Anand-Helora/TestDoubleIA/pull/6#pullrequestreview-5833652385",
+        "id": 5833652385,
+        "state": "COMMENTED",
+        "submitted_at": "2026-11-09T22:20:19Z",
+        "user": {
+          "id": 199175422,
+          "login": "chatgpt-codex-connector[bot]",
+          "type": "Bot"
+        }
+      }
+    ],
+    "reviewComments": [
+      {
+        "body": "**<sub><sub>![P2 Badge](https://img.shields.io/badge/P2-yellow?style=flat)</sub></sub>  Keep the idempotency key stable when the summary completes**\n\nIf an inline finding is detected before Codex publishes its completed summary, the first key contains only `inline:<id>`. When the summary subsequently reports that same finding, this adds `summary:<id>:code_review` to the hashed identifiers and produces a different key despite no new finding or SHA. Replaying these two snapshots with the first key in `seenKeys` still returns `WOULD_REQUEST_CLAUDE_FIX`, rather than `DUPLICATE_ALREADY_REPORTED`. Canonicalize the finding identity across inline and summary signals so the normal review-then-summary sequence satisfies the documented idempotency guarantee.\n\nUseful? React with 👍 / 👎.\n\n<!-- codex-code-review-finding:v1 -->",
+        "commit_id": "e1bcd54c6d4a52bcd63a265758b3fb93a716e443",
+        "created_at": "2026-11-09T22:20:20Z",
+        "html_url": "https://github.com/Anand-Helora/TestDoubleIA/pull/6#discussion_r4518670008",
+        "id": 4518670008,
+        "in_reply_to_id": null,
+        "original_commit_id": "e1bcd54c6d4a52bcd63a265758b3fb93a716e443",
+        "path": "tools/codex-feedback/detect.js",
+        "pull_request_review_id": 5833652385,
+        "user": {
+          "id": 199175422,
+          "login": "chatgpt-codex-connector[bot]",
+          "type": "Bot"
+        }
+      },
+      {
+        "body": "**<sub><sub>![P2 Badge](https://img.shields.io/badge/P2-yellow?style=flat)</sub></sub>  Scope contradiction checks to the corresponding review section**\n\nWhen `code_review` has only resolved inline threads but `security_review` independently reports an unresolved finding on the current SHA, this condition returns `CONTRADICTORY_SIGNALS` and suppresses the security finding. Those signals are not contradictory: the resolved threads need not represent the finding reported by the other section. The same security summary correctly produces `WOULD_REQUEST_CLAUDE_FIX` when those unrelated resolved comments are removed. Correlate the threads with the relevant section before treating their resolution as evidence against its summary.\n\nUseful? React with 👍 / 👎.\n\n<!-- codex-code-review-finding:v1 -->",
+        "commit_id": "e1bcd54c6d4a52bcd63a265758b3fb93a716e443",
+        "created_at": "2026-11-09T22:20:20Z",
+        "html_url": "https://github.com/Anand-Helora/TestDoubleIA/pull/6#discussion_r4518670017",
+        "id": 4518670017,
+        "in_reply_to_id": null,
+        "original_commit_id": "e1bcd54c6d4a52bcd63a265758b3fb93a716e443",
+        "path": "tools/codex-feedback/detect.js",
+        "pull_request_review_id": 5833652385,
+        "user": {
+          "id": 199175422,
+          "login": "chatgpt-codex-connector[bot]",
+          "type": "Bot"
+        }
+      }
+    ],
+    "threads": {
+      "4518670008": {
+        "isResolved": false,
+        "isOutdated": false
+      },
+      "4518670017": {
+        "isResolved": false,
+        "isOutdated": false
+      }
+    }
+  },
+  "expected": {
+    "decision": "WOULD_REQUEST_CLAUDE_FIX",
+    "reason": "CONFIRMED_UNRESOLVED_FINDINGS_ON_HEAD"
+  }
+}

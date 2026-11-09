@@ -1,0 +1,97 @@
+# Détection en lecture seule des anomalies signalées par Codex (Issue #5, phase A).
+# Aucune écriture, aucun secret, aucune exécution de Claude : la seule sortie est
+# une décision dans le journal et le récapitulatif de l'exécution.
+# Documentation : docs/codex-feedback-dryrun.md
+name: Codex feedback (dry run)
+
+on:
+  # Résumé Codex dans la conversation de la PR (créé puis édité par Codex)
+  issue_comment:
+    types: [created, edited]
+  # Soumission d'une revue Codex
+  pull_request_review:
+    types: [submitted, edited]
+  # Remarques inline de Codex
+  pull_request_review_comment:
+    types: [created, edited]
+  # Test manuel contrôlé : PR réelle (lecture seule) ou scénario simulé hors ligne
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: Numéro de PR à analyser (ignoré si un scénario est choisi)
+        required: false
+        type: string
+      fixture:
+        description: Scénario simulé hors ligne (aucun appel API)
+        required: false
+        type: choice
+        default: none
+        options:
+          - none
+          - clean-review
+          - finding-on-head
+          - third-party-imitation
+          - duplicate-event
+          - stale-sha
+          - closed-pr
+          - malformed-payload
+          - review-in-progress
+          - cycle-limit
+          - summary-after-inline
+          - security-finding-resolved-code-threads
+          - real-pr6-review
+
+permissions:
+  contents: read
+  pull-requests: read
+  issues: read
+
+# Une analyse à la fois par PR, sans annuler celle en cours.
+concurrency:
+  group: codex-feedback-${{ github.event.issue.number || github.event.pull_request.number || inputs.pr_number || github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  detect:
+    name: Détection (lecture seule)
+    # Pré-filtre : seuls les contenus du compte bot Codex sur une PR ouverte lancent le job.
+    # Le script revérifie l'identité complète (login, identifiant, type, application) via l'API.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'issue_comment' && github.event.issue.pull_request &&
+       github.event.issue.state == 'open' &&
+       github.event.comment.user.login == 'chatgpt-codex-connector[bot]') ||
+      (github.event_name == 'pull_request_review' && github.event.pull_request.state == 'open' &&
+       github.event.review.user.login == 'chatgpt-codex-connector[bot]') ||
+      (github.event_name == 'pull_request_review_comment' && github.event.pull_request.state == 'open' &&
+       github.event.comment.user.login == 'chatgpt-codex-connector[bot]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      # Code de confiance uniquement : branche par défaut pour les événements de PR
+      # (jamais le code de la PR), ref choisie par la personne pour un lancement manuel.
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && github.ref || github.event.repository.default_branch }}
+          persist-credentials: false
+          sparse-checkout: |
+            tools/codex-feedback
+            tests/fixtures/codex
+          sparse-checkout-cone-mode: true
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # Avant la fusion de ce workflow, la branche par défaut ne contient pas encore
+      # le détecteur : on le signale au lieu d'échouer.
+      - name: Détecteur absent de la ref analysée
+        if: hashFiles('tools/codex-feedback/detect.js') == ''
+        run: echo "::notice title=Codex feedback (dry run)::détecteur absent de la ref récupérée (avant fusion dans la branche par défaut) — aucune analyse"
+
+      - name: Analyser les remarques Codex
+        if: hashFiles('tools/codex-feedback/detect.js') != ''
+        env:
+          GITHUB_TOKEN: ${{ github.token }}   # jeton automatique, limité aux permissions read ci-dessus
+          FIXTURE_NAME: ${{ inputs.fixture }}
+        run: node tools/codex-feedback/detect.js
