@@ -26,6 +26,10 @@ La partie démarre à la première touche de direction.
 - Toucher un mur ou son propre corps termine la partie (« Partie terminée »).
 - Le demi-tour immédiat est impossible, y compris avec deux touches pressées très vite.
 - Si le serpent remplit toute la grille, la partie est gagnée.
+- Le meilleur score (« Record ») s'affiche à côté du score, se met à jour dès qu'il est dépassé
+  et est conservé entre les sessions dans le `localStorage` du navigateur (clé `snake.bestScore`).
+  Si le stockage est indisponible, bloqué ou contient une valeur invalide, le jeu reste jouable
+  et le record repart de 0 (il est alors gardé en mémoire pendant la session).
 
 ### Structure
 
@@ -34,8 +38,10 @@ La partie démarre à la première touche de direction.
 | `index.html` | Page du jeu |
 | `style.css` | Mise en forme |
 | `snake.js` | Logique pure (déplacement, collisions, pommes, score), sans DOM |
+| `best-score.js` | Meilleur score : lecture/écriture protégées dans `localStorage`, validation des valeurs |
 | `game.js` | Rendu canvas, clavier, boucle de jeu, écran de fin |
 | `tests/snake.test.js` | Tests unitaires de la logique |
+| `tests/best-score.test.js` | Tests du meilleur score (validation, persistance simulée, erreurs de stockage) |
 | `tests/game.test.js` | Tests de l'interface `game.js` avec DOM et minuteurs simulés |
 | `tests/browser_check.py` | Test de bout en bout déterministe dans un vrai navigateur (facultatif) |
 | `.github/workflows/tests.yml` | Exécution automatique des tests (GitHub Actions) |
