@@ -79,3 +79,9 @@ Le crochet de test `window.__snake` n'est exposé qu'en ouvrant `index.html?test
   (1 tentative par SHA, 2 cycles par PR). **Aucun appel à Claude, aucun secret, aucune fusion** ; la
   réservation reste désactivée tant que la variable `CODEX_GATE_ENABLED` ne vaut pas `true`. Voir
   [docs/codex-feedback-gate.md](docs/codex-feedback-gate.md).
+- `.github/workflows/codex-feedback-handoff.yml` : dossier de correction Codex → Claude Code Web
+  (Issue #11, phase B2 **sans API**). Lorsqu'une anomalie Codex authentique, non résolue et portant sur le
+  SHA courant est revérifiée, un dossier en français prêt à copier-coller est publié dans le résumé de
+  l'exécution et dans un artefact (`HANDOFF_READY`) ; sinon `NO_HANDOFF` ou `UNVERIFIED`. **Aucun appel à
+  Claude, aucun secret, aucune permission d'écriture, aucun commentaire, aucune fusion** : la transmission
+  à Claude Code Web reste un geste humain. Voir [docs/codex-feedback-handoff.md](docs/codex-feedback-handoff.md).

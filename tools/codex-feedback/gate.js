@@ -711,7 +711,9 @@ module.exports = {
   isAllowedBranch, checkPullRequest, checkPermission, evaluateEligibility,
   shaRef, cycleRef, assertGateRef, serializeRecord, parseRecord,
   GateApiError, isRateLimited, guardedFetch, GitRefStore, MemoryStore, createRefSafe,
-  reserve, reserveStage, analyzeStage, simulate, storeSelfTest, renderSummary, run
+  reserve, reserveStage, analyzeStage, simulate, storeSelfTest, renderSummary, run,
+  // Réutilisés en lecture seule par la phase B2 (handoff.js)
+  apiRequest, githubContext, loadPermissionFrom, validSections, isObject
 };
 
 if (require.main === module) {
