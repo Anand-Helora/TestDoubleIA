@@ -1,0 +1,85 @@
+# Dossier de correction Codex → Claude Code Web (Issue #11, phase B2 sans API).
+# AUCUN appel à Claude ni à l'API Anthropic, aucun jeton OAuth, aucun secret, aucun commentaire publié,
+# aucune fusion. Lorsqu'une anomalie Codex authentique est confirmée sur le SHA courant, un dossier
+# prêt à copier-coller est publié dans le résumé de l'exécution et dans un artefact.
+# Statuts : HANDOFF_READY, NO_HANDOFF ou UNVERIFIED.
+# Documentation : docs/codex-feedback-handoff.md
+name: Codex handoff (B2, sans API)
+
+on:
+  # Résumé Codex (créé puis édité à la fin de chaque revue). Les événements issue_comment
+  # utilisent toujours la version du workflow de la branche par défaut : le code d'une PR
+  # ne peut pas modifier ce workflow.
+  issue_comment:
+    types: [created, edited]
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: demo (hors ligne) ou prepare-pr (PR réelle, lecture seule)
+        required: true
+        type: choice
+        default: demo
+        options:
+          - demo
+          - prepare-pr
+      pr_number:
+        description: Numéro de PR (mode prepare-pr)
+        required: false
+        type: string
+
+# Aucune permission par défaut : le job déclare uniquement des lectures.
+permissions: {}
+
+jobs:
+  handoff:
+    name: Préparation du dossier (lecture seule)
+    # Pré-filtre : résumé publié ET envoyé par le compte bot Codex sur une PR ouverte,
+    # ou lancement manuel par la personne propriétaire du dépôt.
+    # handoff.js revérifie l'identité complète (login, identifiant, type, application) via l'API.
+    if: >-
+      (github.event_name == 'workflow_dispatch' && github.actor == github.repository_owner) ||
+      (github.event_name == 'issue_comment' && github.event.issue.pull_request &&
+       github.event.issue.state == 'open' &&
+       github.event.comment.user.login == 'chatgpt-codex-connector[bot]' &&
+       github.event.sender.login == 'chatgpt-codex-connector[bot]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+      issues: read
+      actions: read          # déduplication : liste des artefacts déjà publiés (lecture)
+    # Une préparation à la fois par PR : l'artefact d'une exécution est visible de la suivante.
+    concurrency:
+      group: codex-handoff-${{ github.event.issue.number || inputs.pr_number || github.run_id }}
+      cancel-in-progress: false
+    steps:
+      # Code de confiance uniquement : branche par défaut (jamais le code de la PR).
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'issue_comment' && github.event.repository.default_branch || github.ref }}
+          persist-credentials: false
+          sparse-checkout: |
+            tools/codex-feedback
+          sparse-checkout-cone-mode: true
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Vérifier la revue Codex et préparer le dossier
+        id: handoff
+        env:
+          HANDOFF_PHASE: ${{ inputs.mode == 'demo' && 'demo' || 'prepare' }}
+          HANDOFF_DIR: ${{ runner.temp }}/codex-handoff
+          GITHUB_TOKEN: ${{ github.token }}   # jeton automatique, limité aux lectures ci-dessus
+        run: node tools/codex-feedback/handoff.js
+
+      - name: Publier le dossier (artefact)
+        if: steps.handoff.outputs.handoff == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.handoff.outputs.artifact_name }}
+          path: ${{ runner.temp }}/codex-handoff/dossier-correction.md
+          if-no-files-found: error
+          retention-days: 30
