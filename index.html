@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Snake</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="app">
+    <header class="bar">
+      <h1>Snake</h1>
+      <p class="score">Score : <span id="score" aria-live="polite">0</span></p>
+    </header>
+
+    <div class="board-wrap">
+      <canvas id="board" width="400" height="400" tabindex="0"
+              aria-label="Plateau de jeu Snake"></canvas>
+      <div id="overlay" class="overlay" hidden>
+        <div class="overlay-box" role="dialog" aria-labelledby="overlay-title">
+          <h2 id="overlay-title">Partie terminée</h2>
+          <button id="restart" type="button">Recommencer</button>
+        </div>
+      </div>
+    </div>
+
+    <p id="message" class="message" aria-live="polite"></p>
+
+    <p class="help">
+      Déplacements : flèches, ZQSD ou WASD · Pause : Espace · Recommencer : Entrée
+    </p>
+  </main>
+
+  <script src="snake.js"></script>
+  <script src="game.js"></script>
+</body>
+</html>
