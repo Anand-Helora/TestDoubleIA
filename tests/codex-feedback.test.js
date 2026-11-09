@@ -416,7 +416,7 @@ const apiRoutes = () => {
     '/issues/7/comments': { data: d.issueComments },
     '/pulls/7': { data: { number: 7, state: 'open', head: { sha: HEAD } } },
     '/graphql': { data: { data: { repository: { pullRequest: { reviewThreads: { pageInfo: { hasNextPage: false },
-      nodes: [{ isResolved: false, isOutdated: false, comments: { nodes: [{ databaseId: 701 }] } }] } } } } } }
+      nodes: [{ isResolved: false, isOutdated: false, comments: { nodes: [{ fullDatabaseId: '701' }] } }] } } } } } }
   };
 };
 
@@ -636,4 +636,186 @@ test('données réelles de la PR #6 : deux P2 Codex détectés, section code_rev
   assert.equal(r.idempotencyKey, 'codex-fix:pr-6:e1bcd54c6d4a52bcd63a265758b3fb93a716e443:code_review');
   assert.ok(!r.notes.includes('SECTION_DEFAULTED'));
   assert.ok(!D.renderSummary(r).includes('idempotency'), 'texte des remarques absent du résumé');
+});
+
+// --- Non-régression : identifiants GitHub au-delà de l'Int GraphQL 32 bits (revue Codex P2) ---
+
+const INT32_MAX = 2147483647;
+// Identifiants réels des remarques Codex de la PR #6
+const BIG_A = 4518670008;
+const BIG_B = 4518670017;
+const BIG_C = 4518811568;
+
+test('normalizeId : chaînes et nombres sûrs, sans perte de précision', () => {
+  assert.equal(D.normalizeId(BIG_A), '4518670008');
+  assert.equal(D.normalizeId('4518670008'), '4518670008');
+  assert.equal(D.normalizeId(INT32_MAX), '2147483647');
+  assert.equal(D.normalizeId(INT32_MAX + 1), '2147483648');
+  assert.equal(D.normalizeId('9007199254740991'), '9007199254740991');
+  assert.equal(D.normalizeId(701), '701');
+  for (const bad of ['9007199254740993', '99999999999999999999', 9007199254740993, '0', 0, -5, '-5', '012', '1e9',
+    '4518670008.0', ' 4518670008', 4518670008.5, NaN, Infinity, null, undefined, {}, []]) {
+    assert.equal(D.normalizeId(bad), null, String(bad));
+  }
+});
+
+test('buildThreadMap : clés canoniques, doublons ambigus, entrées invalides ignorées', () => {
+  const node = (id, isResolved = false, isOutdated = false) => ({ isResolved, isOutdated, comments: { nodes: [{ fullDatabaseId: id }] } });
+  const map = D.buildThreadMap([
+    node('4518670008', true), node('4518670017'), node(String(INT32_MAX + 1)),
+    node('4518811568'), node('4518811568', true),            // même racine deux fois → ambigu
+    node('pas-un-id'), node('9007199254740993'),             // invalides ou hors plage sûre
+    { isResolved: 'oui', isOutdated: false, comments: { nodes: [{ fullDatabaseId: '42' }] } },
+    { comments: { nodes: [] } }, null
+  ]);
+  assert.deepEqual(map['4518670008'], { isResolved: true, isOutdated: false });
+  assert.deepEqual(map['4518670017'], { isResolved: false, isOutdated: false });
+  assert.deepEqual(map['2147483648'], { isResolved: false, isOutdated: false });
+  assert.equal(map['4518811568'].ambiguous, true);
+  assert.deepEqual(Object.keys(map).sort(), ['2147483648', '4518670008', '4518670017', '4518811568']);
+});
+
+/**
+ * GraphQL simulé fidèle au problème : databaseId (Int 32 bits) ne peut pas représenter
+ * un identifiant > 2 147 483 647 et provoque une erreur ; fullDatabaseId (BigInt) est
+ * renvoyé sous forme de chaîne.
+ */
+function graphqlThreads(threads) {
+  return (url, init) => {
+    const { query } = JSON.parse(init.body);
+    assert.match(query.trim(), /^query/);
+    const legacy = /(^|[^A-Za-z])databaseId\b/.test(query);
+    const nodes = threads.map(([id, isResolved, isOutdated = false]) => ({
+      isResolved, isOutdated,
+      comments: { nodes: [legacy ? { databaseId: id > INT32_MAX ? null : id } : { fullDatabaseId: String(id) }] }
+    }));
+    const errors = legacy && threads.some(([id]) => id > INT32_MAX)
+      ? [{ message: 'Int cannot represent non 32-bit signed integer value', path: ['repository', 'pullRequest'] }]
+      : undefined;
+    return { data: { ...(errors ? { errors } : {}), data: { repository: { pullRequest: { reviewThreads: {
+      pageInfo: { hasNextPage: false }, nodes } } } } } };
+  };
+}
+
+/** Routes API simulées d'une PR dont les remarques Codex ont de grands identifiants. */
+function bigIdRoutes({ summaryState, threads, reviewId = 5833652385 }) {
+  const comments = [
+    inline(BIG_A, reviewId, HEAD, 'P2'),
+    inline(BIG_B, reviewId, HEAD, 'P1')
+  ];
+  const s = summaryState === 'running'
+    ? summary(6752972286, HEAD, null, { body: stateBody(HEAD, null, 'running') })
+    : summary(6752972286, HEAD, true);
+  return {
+    '/pulls/7/reviews': { data: [review(reviewId, HEAD)] },
+    '/pulls/7/comments': { data: comments },
+    '/issues/7/comments': { data: [s] },
+    '/pulls/7': { data: { number: 7, state: 'open', head: { sha: HEAD } } },
+    '/graphql': graphqlThreads(threads)
+  };
+}
+
+function fetchCtx(routes) {
+  return { repo: REPO, token: 'jeton-factice', apiUrl: 'https://api.test', graphqlUrl: 'https://api.test/graphql',
+    fetch: mockFetch(routes) };
+}
+
+test('récupération GraphQL : la requête demande fullDatabaseId, jamais databaseId', async () => {
+  const ctx = fetchCtx(bigIdRoutes({ summaryState: 'running', threads: [[BIG_A, false], [BIG_B, false]] }));
+  await D.fetchApiData(7, ctx);
+  const gql = ctx.fetch.calls.find((c) => c.url.endsWith('/graphql'));
+  const { query } = JSON.parse(gql.body);
+  assert.match(query, /fullDatabaseId/);
+  assert.doesNotMatch(query, /(^|[^A-Za-z])databaseId\b/);
+});
+
+test('grands identifiants, avant le résumé final : remarques inline détectées via l\'API', async () => {
+  const { dir, env } = runEnv('pull_request_review', reviewEvent(review(5833652385, HEAD)));
+  const routes = bigIdRoutes({ summaryState: 'running', threads: [[BIG_A, false], [BIG_B, false]] });
+  const r = await D.run(env, { fetch: mockFetch(routes), out: () => {} });
+  assert.equal(r.decision, 'WOULD_REQUEST_CLAUDE_FIX');
+  assert.deepEqual(r.findings.map((f) => f.url), [
+    `https://github.com/${REPO}/pull/7#discussion_r${BIG_A}`,
+    `https://github.com/${REPO}/pull/7#discussion_r${BIG_B}`
+  ]);
+  assert.ok(!(r.notes || []).includes('THREAD_NOT_MATCHED'));
+  assert.ok(!(r.notes || []).includes('THREAD_STATUS_UNAVAILABLE'));
+  fs.rmSync(dir, { recursive: true });
+});
+
+test('grands identifiants : chaque fil est associé au bon commentaire', async () => {
+  // Fil de BIG_A résolu, fil de BIG_B non résolu : seule BIG_B (P1) doit rester.
+  const ctx = fetchCtx(bigIdRoutes({ summaryState: 'running', threads: [[BIG_A, true], [BIG_B, false]] }));
+  const api1 = await D.fetchApiData(7, ctx);
+  assert.deepEqual(api1.threads[String(BIG_A)], { isResolved: true, isOutdated: false });
+  assert.deepEqual(api1.threads[String(BIG_B)], { isResolved: false, isOutdated: false });
+  const r = D.evaluate('pull_request_review', reviewEvent(review(5833652385, HEAD)), api1);
+  assert.equal(r.decision, 'WOULD_REQUEST_CLAUDE_FIX');
+  assert.deepEqual(r.findings.map((f) => [f.priority, f.url]), [['P1', `https://github.com/${REPO}/pull/7#discussion_r${BIG_B}`]]);
+
+  // Inverse : seule BIG_A (P2) doit rester.
+  const api2 = await D.fetchApiData(7, fetchCtx(bigIdRoutes({ summaryState: 'running', threads: [[BIG_A, false], [BIG_B, true]] })));
+  const r2 = D.evaluate('pull_request_review', reviewEvent(review(5833652385, HEAD)), api2);
+  assert.deepEqual(r2.findings.map((f) => f.priority), ['P2']);
+
+  // Les deux résolus, résumé encore en cours : plus rien à corriger, pas de faux positif.
+  const api3 = await D.fetchApiData(7, fetchCtx(bigIdRoutes({ summaryState: 'running', threads: [[BIG_A, true], [BIG_B, true]] })));
+  const r3 = D.evaluate('pull_request_review', reviewEvent(review(5833652385, HEAD)), api3);
+  assert.notEqual(r3.decision, 'WOULD_REQUEST_CLAUDE_FIX');
+});
+
+test('grands identifiants, avant puis après le résumé final : même clé, doublon détecté', async () => {
+  const before = await D.fetchApiData(7, fetchCtx(bigIdRoutes({ summaryState: 'running', threads: [[BIG_A, false], [BIG_B, false]] })));
+  const r1 = D.evaluate('pull_request_review', reviewEvent(review(5833652385, HEAD)), before);
+  assert.equal(r1.decision, 'WOULD_REQUEST_CLAUDE_FIX');
+  assert.deepEqual(r1.findings.map((f) => f.source), ['inline', 'inline']);
+
+  const after = await D.fetchApiData(7, fetchCtx(bigIdRoutes({ summaryState: 'completed', threads: [[BIG_A, false], [BIG_B, false]] })));
+  const fresh = D.evaluate('issue_comment', commentEvent(summary(6752972286, HEAD, true), 'edited'), after);
+  assert.equal(fresh.decision, 'WOULD_REQUEST_CLAUDE_FIX');
+  assert.deepEqual(fresh.findings.map((f) => f.source), ['inline', 'inline', 'summary/code_review']);
+  assert.equal(fresh.idempotencyKey, r1.idempotencyKey);
+  const dup = D.evaluate('issue_comment', commentEvent(summary(6752972286, HEAD, true), 'edited'), after,
+    { seenKeys: new Set([r1.idempotencyKey]) });
+  assert.equal(dup.reason, 'DUPLICATE_ALREADY_REPORTED');
+});
+
+test('limite de l\'Int 32 bits : 2 147 483 647 et 2 147 483 648 tous deux associés', async () => {
+  const routes = bigIdRoutes({ summaryState: 'running', threads: [[INT32_MAX, false], [INT32_MAX + 1, true]] });
+  routes['/pulls/7/comments'] = { data: [inline(INT32_MAX, 5833652385, HEAD, 'P2'), inline(INT32_MAX + 1, 5833652385, HEAD, 'P1')] };
+  const api1 = await D.fetchApiData(7, fetchCtx(routes));
+  assert.deepEqual(api1.threads[String(INT32_MAX)], { isResolved: false, isOutdated: false });
+  assert.deepEqual(api1.threads[String(INT32_MAX + 1)], { isResolved: true, isOutdated: false });
+  const r = D.evaluate('pull_request_review', reviewEvent(review(5833652385, HEAD)), api1);
+  assert.equal(r.decision, 'WOULD_REQUEST_CLAUDE_FIX');
+  assert.deepEqual(r.findings.map((f) => f.priority), ['P2']);
+  assert.ok(!(r.notes || []).includes('THREAD_NOT_MATCHED'), 'les deux fils sont associés');
+});
+
+test('fil ambigu (même identifiant deux fois) ou hors plage : UNVERIFIED', async () => {
+  const amb = bigIdRoutes({ summaryState: 'running', threads: [[BIG_A, false], [BIG_A, true]] });
+  amb['/pulls/7/comments'] = { data: [inline(BIG_A, 5833652385, HEAD, 'P2')] };
+  const r1 = D.evaluate('pull_request_review', reviewEvent(review(5833652385, HEAD)), await D.fetchApiData(7, fetchCtx(amb)));
+  assert.equal(r1.decision, 'UNVERIFIED');
+  assert.equal(r1.reason, 'FINDING_STATUS_UNKNOWN');
+  assert.ok(r1.notes.includes('THREAD_NOT_MATCHED'));
+
+  // Identifiant GraphQL au-delà des entiers sûrs : aucune correspondance tentée
+  const data = findingApi();
+  data.issueComments = [summary(901, HEAD, null, { body: stateBody(HEAD, null, 'running') })];
+  data.threads = D.buildThreadMap([{ isResolved: false, isOutdated: false, comments: { nodes: [{ fullDatabaseId: '9007199254740993' }] } }]);
+  const r2 = D.evaluate('pull_request_review', reviewEvent(review(801, HEAD)), data);
+  assert.equal(r2.decision, 'UNVERIFIED');
+  assert.ok(r2.notes.includes('THREAD_NOT_MATCHED'));
+});
+
+test('réponse GraphQL avec erreurs : statut des fils indisponible, jamais deviné', async () => {
+  const routes = bigIdRoutes({ summaryState: 'running', threads: [[BIG_A, false]] });
+  routes['/graphql'] = { data: { errors: [{ message: 'partiel' }], data: { repository: { pullRequest: { reviewThreads: {
+    pageInfo: { hasNextPage: false }, nodes: [{ isResolved: false, isOutdated: false, comments: { nodes: [{ fullDatabaseId: String(BIG_A) }] } }] } } } } } };
+  const api1 = await D.fetchApiData(7, fetchCtx(routes));
+  assert.equal(api1.threads, null);
+  const r = D.evaluate('pull_request_review', reviewEvent(review(5833652385, HEAD)), api1);
+  assert.equal(r.decision, 'UNVERIFIED');
+  assert.ok(r.notes.includes('THREAD_STATUS_UNAVAILABLE'));
 });
