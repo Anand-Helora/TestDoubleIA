@@ -19,7 +19,6 @@
  */
 'use strict';
 
-const crypto = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
 
@@ -45,6 +44,10 @@ const STATE_MARKER_RE = /<!--\s*codex-review-state:v1\s+(\{[\s\S]*?\})\s*-->/;
 const MAX_STATE_JSON = 4000;
 // Badge de priorité des remarques inline Codex : ![P1 Badge](https://img.shields.io/badge/P1-…)
 const BADGE_RE = /!\[(P[0-3]) Badge\]\(https:\/\/img\.shields\.io\/badge\/P[0-3]-/;
+// Section d'une remarque inline : marqueur observé sur les revues Codex (PR #6).
+// Sans marqueur, la remarque est rattachée à code_review (cas des revues de code
+// Codex) et une note SECTION_DEFAULTED est ajoutée.
+const SECTION_MARKER_RE = /<!--\s*codex-(code|security)-review-finding:v1\s*-->/;
 const SUPPORTED_EVENTS = {
   issue_comment: ['created', 'edited'],
   pull_request_review: ['submitted', 'edited'],
@@ -159,9 +162,25 @@ function safeUrl(url, repo) {
   return typeof url === 'string' && url.startsWith(prefix) && !/[\s<>"'`]/.test(url) ? url : null;
 }
 
-function idempotencyKey(prNumber, headSha, findingIds) {
-  const digest = crypto.createHash('sha256').update([...findingIds].sort().join('\n')).digest('hex').slice(0, 16);
-  return `codex-fix:pr-${prNumber}:${headSha}:${digest}`;
+/**
+ * Clé d'idempotence : PR + SHA courant + sections de revue ayant une anomalie.
+ *
+ * Une même observation peut apparaître d'abord comme remarque inline, puis
+ * dans le résumé final (ou l'inverse) : elle est identifiée par sa section
+ * (code_review / security_review), pas par le signal qui la porte, ni par le
+ * texte, ni par la date. La clé reste donc stable quel que soit l'ordre
+ * d'arrivée des signaux et les éditions. Compromis : deux remarques de la même
+ * section sur le même SHA partagent la clé, ce qui correspond à la règle
+ * « au plus un cycle de correction par SHA ».
+ */
+function idempotencyKey(prNumber, headSha, sections) {
+  const canonical = [...new Set(sections)].sort().join('+');
+  return `codex-fix:pr-${prNumber}:${headSha}:${canonical}`;
+}
+
+function sectionOf(body) {
+  const m = typeof body === 'string' ? SECTION_MARKER_RE.exec(body) : null;
+  return m ? { section: `${m[1]}_review`, defaulted: false } : { section: 'code_review', defaulted: true };
 }
 
 /**
@@ -212,9 +231,12 @@ function analyze(trigger, api, options = {}) {
       const commit = reviewCommit.get(c.pull_request_review_id) || c.original_commit_id || null;
       const badge = typeof c.body === 'string' ? BADGE_RE.exec(c.body) : null;
       const thread = api.threads && isObject(api.threads[c.id]) ? api.threads[c.id] : null;
+      const { section, defaulted } = sectionOf(c.body);
       return {
         id: c.id,
         commit,
+        section,
+        sectionDefaulted: defaulted,
         priority: badge ? badge[1] : null,
         resolved: thread ? thread.isResolved === true : null,
         outdated: thread ? thread.isOutdated === true : null,
@@ -229,6 +251,7 @@ function analyze(trigger, api, options = {}) {
   const resolvedInline = inlineOnHead.filter((c) => c.resolved === true || c.outdated === true);
   const unknownInline = inlineOnHead.filter((c) => !c.priority || c.resolved === null);
   if (api.threads === null && inlineOnHead.length) notes.push('THREAD_STATUS_UNAVAILABLE');
+  if (inlineOnHead.some((c) => c.sectionDefaulted)) notes.push('SECTION_DEFAULTED');
 
   // Résumé sur le SHA courant
   const pending = headSections.filter(([, s]) => s.status !== 'completed');
@@ -237,24 +260,34 @@ function analyze(trigger, api, options = {}) {
     headSections.every(([, s]) => s.unresolved === false);
 
   const findings = [
-    ...confirmedInline.map((c) => ({ source: 'inline', id: `inline:${c.id}`, priority: c.priority, url: c.url })),
+    ...confirmedInline.map((c) => ({ source: 'inline', section: c.section, id: `inline:${c.id}`, priority: c.priority, url: c.url })),
     ...summaryUnresolved.map(([name]) => ({
-      source: `summary/${name}`, id: `summary:${summary.id}:${name}`, priority: null, url: safeUrl(summary.html_url, repo)
+      source: `summary/${name}`, section: name, id: `summary:${summary.id}:${name}`, priority: null,
+      url: safeUrl(summary.html_url, repo)
     }))
   ];
   const commonExtra = { headSha, reviewedOnHead: headSections.length > 0 || reviewsOnHead.length > 0 };
 
-  // Contradictions entre les sources de Codex → incertain
-  if (summaryClean && confirmedInline.length) {
-    return result(DECISION.UNVERIFIED, 'CONTRADICTORY_SIGNALS', { ...commonExtra, findings, notes });
+  // Contradictions entre les sources de Codex → incertain. Elles ne sont
+  // évaluées qu'à l'intérieur d'une même section : des fils résolus de
+  // code_review ne disent rien d'une anomalie signalée par security_review.
+  const contradictions = [];
+  for (const [name, s] of headSections) {
+    if (s.status !== 'completed') continue;
+    const sectionInline = inlineOnHead.filter((c) => c.section === name);
+    const confirmed = sectionInline.filter((c) => confirmedInline.includes(c));
+    const unknown = sectionInline.filter((c) => unknownInline.includes(c));
+    if (s.unresolved === false && confirmed.length) contradictions.push(`${name}:SUMMARY_CLEAN_THREAD_UNRESOLVED`);
+    if (s.unresolved === true && sectionInline.length && !confirmed.length && !unknown.length) {
+      contradictions.push(`${name}:SUMMARY_UNRESOLVED_THREADS_RESOLVED`);
+    }
   }
-  if (summaryUnresolved.length && inlineOnHead.length && !confirmedInline.length && !unknownInline.length) {
-    // Le résumé signale des remarques non résolues mais tous les fils sont résolus.
-    return result(DECISION.UNVERIFIED, 'CONTRADICTORY_SIGNALS', { ...commonExtra, findings, notes });
+  if (contradictions.length) {
+    return result(DECISION.UNVERIFIED, 'CONTRADICTORY_SIGNALS', { ...commonExtra, findings, notes: [...notes, ...contradictions] });
   }
 
   if (findings.length) {
-    const key = idempotencyKey(trigger.prNumber, headSha, findings.map((f) => f.id));
+    const key = idempotencyKey(trigger.prNumber, headSha, findings.map((f) => f.section));
     // Cycles : SHA distincts sur lesquels Codex a laissé des remarques classées, plus le SHA courant.
     const previous = new Set(inline.filter((c) => c.priority && c.commit && c.commit !== headSha).map((c) => c.commit));
     const cycle = previous.size + 1;
@@ -315,9 +348,9 @@ function renderSummary(r) {
   if (r.cycle) lines.push(`| Cycle | ${clean(r.cycle)} / ${clean(r.maxCycles)} |`);
   if (r.notes && r.notes.length) lines.push(`| Notes | ${r.notes.map(clean).join(', ')} |`);
   if (r.findings && r.findings.length) {
-    lines.push('', '### Remarques Codex retenues', '', '| Source | Priorité | Lien |', '| --- | --- | --- |');
+    lines.push('', '### Remarques Codex retenues', '', '| Source | Section | Priorité | Lien |', '| --- | --- | --- | --- |');
     for (const f of r.findings) {
-      lines.push(`| ${clean(f.source)} | ${clean(f.priority || '—')} | ${f.url ? `[ouvrir](${f.url})` : '—'} |`);
+      lines.push(`| ${clean(f.source)} | ${clean(f.section)} | ${clean(f.priority || '—')} | ${f.url ? `[ouvrir](${f.url})` : '—'} |`);
     }
   }
   lines.push('', '_Mode lecture seule : aucune action effectuée._', '');
