@@ -25,7 +25,9 @@ body {
 
 h1 { margin: 0; font-size: 1.6rem; letter-spacing: 0.04em; }
 .score { margin: 0; font-size: 1.1rem; font-variant-numeric: tabular-nums; }
+.scores { display: flex; gap: 18px; }
 .score span { font-weight: 700; color: #b5f05a; }
+.score.best span { color: #f2c94c; }
 
 .board-wrap { position: relative; }
 

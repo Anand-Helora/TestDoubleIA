@@ -10,6 +10,7 @@ const vm = require('node:vm');
 
 const ROOT = path.join(__dirname, '..');
 const SNAKE_SRC = fs.readFileSync(path.join(ROOT, 'snake.js'), 'utf8');
+const BEST_SRC = fs.readFileSync(path.join(ROOT, 'best-score.js'), 'utf8');
 const GAME_SRC = fs.readFileSync(path.join(ROOT, 'game.js'), 'utf8');
 
 function fakeElement(extra = {}) {
@@ -31,9 +32,10 @@ function fakeElement(extra = {}) {
 let doc;
 
 /** Charge la page simulée et renvoie des outils de pilotage. */
-function loadGame({ search = '?test', random = () => 0 } = {}) {
+// `setupWindow(window)` permet de définir window.localStorage (ou un accès qui lève).
+function loadGame({ search = '?test', random = () => 0, setupWindow = null } = {}) {
   const els = {
-    board: fakeElement(), score: fakeElement(), message: fakeElement(),
+    board: fakeElement(), score: fakeElement(), best: fakeElement(), message: fakeElement(),
     overlay: fakeElement(), 'overlay-title': fakeElement(), restart: fakeElement()
   };
   const docListeners = {};
@@ -61,6 +63,7 @@ function loadGame({ search = '?test', random = () => 0 } = {}) {
   };
 
   const window = { location: { search } };
+  if (setupWindow) setupWindow(window);
   const sandbox = {
     document: doc, window, self: window,
     setInterval: clock.setInterval, clearInterval: clock.clearInterval,
@@ -69,6 +72,8 @@ function loadGame({ search = '?test', random = () => 0 } = {}) {
   vm.createContext(sandbox);
   vm.runInContext(SNAKE_SRC, sandbox);
   sandbox.SnakeLogic = sandbox.self.SnakeLogic;
+  vm.runInContext(BEST_SRC, sandbox);
+  sandbox.BestScore = sandbox.self.BestScore;
   vm.runInContext(GAME_SRC, sandbox);
 
   function key(k, opts = {}) {
@@ -166,4 +171,143 @@ test('window.__snake absent hors mode test, présent avec ?test', () => {
   assert.equal(loadGame({ search: '?testing' }).api, undefined);
   assert.ok(loadGame({ search: '?test' }).api);
   assert.ok(loadGame({ search: '?a=1&test=1' }).api);
+});
+
+// --- Meilleur score (Issue #3) ---
+
+const BEST_KEY = 'snake.bestScore';
+
+function memoryStorage(initial = {}) {
+  const data = { ...initial };
+  return {
+    data,
+    getItem: (k) => (Object.prototype.hasOwnProperty.call(data, k) ? data[k] : null),
+    setItem: (k, v) => { data[k] = String(v); }
+  };
+}
+
+/** Fait manger `n` pommes : la pomme est placée devant la tête avant chaque pas. */
+function eatApples(g, n) {
+  for (let i = 0; i < n; i++) {
+    const s = g.api.getState();
+    s.food = { x: s.snake[0].x, y: s.snake[0].y - 1 };
+    g.clock.advance(120);
+  }
+}
+
+/** Démarre vers le haut depuis le centre (10,10) ; la pomme (0,0) reste hors trajet. */
+function startUp(g) {
+  g.api.getState().food = { x: 0, y: 0 };
+  g.key('ArrowUp');
+}
+
+test('record affiché à côté du score : 0 au premier lancement', () => {
+  const storage = memoryStorage();
+  const g = loadGame({ setupWindow: (w) => { w.localStorage = storage; } });
+  assert.equal(g.els.best.textContent, '0');
+  assert.equal(g.els.score.textContent, '0');
+});
+
+test('record relu depuis localStorage à l\'initialisation', () => {
+  const storage = memoryStorage({ [BEST_KEY]: '17' });
+  const g = loadGame({ setupWindow: (w) => { w.localStorage = storage; } });
+  assert.equal(g.els.best.textContent, '17');
+});
+
+test('record mis à jour immédiatement dès qu\'il est dépassé, et enregistré', () => {
+  const storage = memoryStorage({ [BEST_KEY]: '2' });
+  const g = loadGame({ setupWindow: (w) => { w.localStorage = storage; } });
+  startUp(g);
+  eatApples(g, 2);
+  assert.equal(g.els.score.textContent, '2');
+  assert.equal(g.els.best.textContent, '2', 'égalité : record inchangé');
+  assert.equal(storage.data[BEST_KEY], '2');
+  eatApples(g, 1);
+  assert.equal(g.els.score.textContent, '3');
+  assert.equal(g.els.best.textContent, '3', 'dépassé : affichage immédiat, avant la fin de partie');
+  assert.equal(storage.data[BEST_KEY], '3', 'enregistré sans attendre la fin de partie');
+  assert.equal(g.api.getState().status, 'playing');
+});
+
+test('le record survit au redémarrage et à une nouvelle session', () => {
+  const storage = memoryStorage();
+  const setupWindow = (w) => { w.localStorage = storage; };
+  const g = loadGame({ setupWindow });
+  startUp(g);
+  eatApples(g, 4);
+  g.api.restart();
+  assert.equal(g.els.score.textContent, '0');
+  assert.equal(g.els.best.textContent, '4', 'conservé après « Recommencer »');
+  startUp(g);
+  eatApples(g, 1);
+  assert.equal(g.els.best.textContent, '4', 'un score plus faible ne remplace pas le record');
+
+  const g2 = loadGame({ setupWindow }); // rechargement de la page
+  assert.equal(g2.els.best.textContent, '4');
+});
+
+test('« Nouveau record ! » en fin de partie seulement si le record a été battu', () => {
+  const storage = memoryStorage({ [BEST_KEY]: '1' });
+  const g = loadGame({ setupWindow: (w) => { w.localStorage = storage; } });
+  startUp(g);
+  eatApples(g, 2);
+  g.clock.advance(120 * 20); // mur du haut
+  assert.equal(g.api.getState().status, 'over');
+  assert.match(g.els.message.textContent, /Score final : 2\. Nouveau record !/);
+
+  g.api.restart();
+  startUp(g);
+  eatApples(g, 1);
+  g.clock.advance(120 * 20);
+  assert.equal(g.api.getState().status, 'over');
+  assert.doesNotMatch(g.els.message.textContent, /Nouveau record/);
+});
+
+test('localStorage absent : jeu jouable, record en mémoire', () => {
+  const g = loadGame(); // aucune propriété localStorage
+  assert.equal(g.els.best.textContent, '0');
+  startUp(g);
+  eatApples(g, 2);
+  assert.equal(g.els.best.textContent, '2');
+  g.clock.advance(120 * 20);
+  assert.equal(g.api.getState().status, 'over');
+  g.api.restart();
+  assert.equal(g.els.best.textContent, '2');
+});
+
+test('accès à localStorage bloqué (SecurityError) : le jeu démarre et reste jouable', () => {
+  const g = loadGame({
+    setupWindow: (w) => {
+      Object.defineProperty(w, 'localStorage', { get() { throw new Error('SecurityError'); } });
+    }
+  });
+  assert.equal(g.els.best.textContent, '0');
+  startUp(g);
+  eatApples(g, 1);
+  assert.equal(g.els.score.textContent, '1');
+  assert.equal(g.els.best.textContent, '1');
+});
+
+test('getItem et setItem qui lèvent : aucune erreur, record en mémoire', () => {
+  const storage = {
+    getItem() { throw new Error('SecurityError'); },
+    setItem() { throw new Error('QuotaExceededError'); }
+  };
+  const g = loadGame({ setupWindow: (w) => { w.localStorage = storage; } });
+  assert.equal(g.els.best.textContent, '0');
+  startUp(g);
+  assert.doesNotThrow(() => eatApples(g, 3));
+  assert.equal(g.els.best.textContent, '3');
+  assert.equal(g.api.getState().status, 'playing');
+});
+
+test('valeurs corrompues ou négatives dans localStorage : record 0', () => {
+  for (const raw of ['-8', 'abc', '2.5', 'Infinity', '1e9', '']) {
+    const storage = memoryStorage({ [BEST_KEY]: raw });
+    const g = loadGame({ setupWindow: (w) => { w.localStorage = storage; } });
+    assert.equal(g.els.best.textContent, '0', raw);
+    startUp(g);
+    eatApples(g, 1);
+    assert.equal(storage.data[BEST_KEY], '1', `${raw} remplacé par un record valide`);
+  }
 });
