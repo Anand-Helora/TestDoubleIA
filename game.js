@@ -125,14 +125,16 @@
     if (state.status !== 'playing') {
       if (e.key === 'Enter' && document.activeElement !== restartBtn) {
         e.preventDefault();
-        newGame();
+        if (!e.repeat) newGame();
       }
       return;
     }
 
     if (e.key === ' ' || e.key === 'Spacebar') {
       e.preventDefault();
-      togglePause();
+      // Une touche maintenue génère des keydown répétés (e.repeat = true) :
+      // seule une nouvelle pression distincte doit basculer la pause.
+      if (!e.repeat) togglePause();
       return;
     }
 
@@ -159,9 +161,12 @@
 
   newGame();
 
-  // Accès pour le débogage et les tests automatisés dans le navigateur.
-  window.__snake = {
-    getState: function () { return state; },
-    restart: newGame
-  };
+  // Accès réservé aux tests automatisés : exposé uniquement avec ?test dans l'URL
+  // (ex. index.html?test), jamais en jeu normal.
+  if (/[?&]test(=|&|$)/.test(window.location.search)) {
+    window.__snake = {
+      getState: function () { return state; },
+      restart: newGame
+    };
+  }
 })();
