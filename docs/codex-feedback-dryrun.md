@@ -95,7 +95,16 @@ l'identifiant numérique empêche un compte homonyme. Ces critères s'appliquent
    PR #6. Le marqueur `codex-security-review-finding:v1` est **supposé** par symétrie et n'a pas encore
    été observé. Une remarque sans marqueur est rattachée à `code_review`, avec la note
    `SECTION_DEFAULTED`.
-3. **Statut des fils** (résolu / obsolète) : uniquement disponible via GraphQL (`reviewThreads`).
+3. **Statut des fils** (résolu / obsolète) : uniquement disponible via GraphQL (`reviewThreads`). Le
+   commentaire racine de chaque fil est identifié par **`fullDatabaseId`** (BigInt, renvoyé sous forme
+   de chaîne), et non par `databaseId`. Ce dernier est un `Int` GraphQL 32 bits, qui ne peut pas
+   représenter les identifiants actuels de GitHub (par exemple `4518670008` sur la PR #6, au-delà de
+   2 147 483 647). Les deux identifiants (REST et GraphQL) sont normalisés en chaîne décimale
+   canonique, sans perte de précision, avant d'être rapprochés. Une valeur invalide, hors de la plage des
+   entiers JavaScript sûrs (2⁵³ − 1) ou présente dans plusieurs fils (ambiguë) n'est jamais rapprochée.
+   La remarque concernée passe alors en statut inconnu (note `THREAD_NOT_MATCHED`, décision
+   `UNVERIFIED` si rien d'autre ne confirme l'anomalie). Une réponse GraphQL contenant des `errors`,
+   même partielle, est entièrement écartée (`THREAD_STATUS_UNAVAILABLE`).
 
 Le texte des remarques n'est **jamais** affiché, enregistré ni interprété. Seuls l'identifiant, la
 priorité et un lien `https://github.com/<dépôt>/…` validé sont repris.
@@ -117,7 +126,7 @@ priorité et un lien `https://github.com/<dépôt>/…` validé sont repris.
 | `UNVERIFIED` | `MALFORMED_PAYLOAD`, `API_DATA_INVALID`, `API_ERROR`, `MISSING_CONTEXT` | Données absentes ou invalides |
 | `UNVERIFIED` | `REVIEW_IN_PROGRESS` | Revue Codex en cours sur le SHA courant |
 | `UNVERIFIED` | `SUMMARY_STATE_UNREADABLE`, `SUMMARY_AMBIGUOUS` | Marqueur d'état illisible, invalide ou sans indicateur |
-| `UNVERIFIED` | `FINDING_STATUS_UNKNOWN` | Remarque sans badge reconnu, ou statut du fil inconnu (GraphQL indisponible) |
+| `UNVERIFIED` | `FINDING_STATUS_UNKNOWN` | Remarque sans badge reconnu, ou statut du fil inconnu (GraphQL indisponible, fil non rapproché ou ambigu) |
 | `UNVERIFIED` | `CONTRADICTORY_SIGNALS` | Le résumé et les fils **d'une même section** se contredisent (détail dans `notes`) |
 
 Ni `NO_ACTION` ni `UNVERIFIED` ne mènent à une action. Le job réussit dans tous ces cas ; seule une
@@ -210,8 +219,9 @@ node tools/codex-feedback/detect.js --fixture tests/fixtures/codex/finding-on-he
    tant que `CODEX` n'est pas mis à jour.
 3. **Activation après fusion seulement** pour les résumés (`issue_comment`) et le lancement manuel. Avant
    cela, seuls les tests de simulation en CI valident le détecteur.
-4. **Statut des fils seulement en GraphQL** ; au-delà de 100 fils, ou si GraphQL échoue, les remarques
-   inline sont `UNVERIFIED` (sauf si le résumé confirme l'anomalie). La pagination REST est limitée à
+4. **Statut des fils seulement en GraphQL** ; au-delà de 100 fils, si GraphQL échoue ou renvoie des
+   erreurs, ou si un identifiant dépasse 2⁵³ − 1, les remarques inline sont `UNVERIFIED` (sauf si le
+   résumé confirme l'anomalie). Les identifiants actuels (~4,5 × 10⁹) sont très loin de cette limite. La pagination REST est limitée à
    10 pages de 100 éléments ; au-delà, `API_ERROR`.
 5. **Pas de mémoire en phase A** : l'idempotence est calculée mais non persistée (cela exigerait une
    écriture).
