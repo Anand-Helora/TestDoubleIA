@@ -1,0 +1,90 @@
+name: Tests
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tests-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  node:
+    name: Node 22 — node --test
+    runs-on: ubuntu-latest
+    timeout-minutes: 5   # une régression du type boucle infinie échoue au lieu de bloquer
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Tests unitaires et d'interface
+        run: |
+          node --version
+          node --test --test-reporter=spec --test-reporter-destination=stdout \
+                      --test-reporter=junit --test-reporter-destination=node-junit.xml
+
+      - name: Publier le rapport JUnit
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: node-test-report
+          path: node-junit.xml
+          if-no-files-found: ignore
+
+  browser:
+    name: Navigateur — ${{ matrix.browser }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        browser: [chromium, firefox, webkit]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Installer Playwright et ${{ matrix.browser }}
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install playwright==1.63.0
+          python -m playwright install --with-deps ${{ matrix.browser }}
+
+      - name: Test de bout en bout (5 exécutions)
+        run: |
+          set -o pipefail
+          python3 tests/browser_check.py --runs 5 --browser ${{ matrix.browser }} \
+            --screenshot screenshot-${{ matrix.browser }}.png 2>&1 | tee browser-${{ matrix.browser }}.log
+
+      - name: Résumé
+        if: always()
+        run: |
+          {
+            echo "### ${{ matrix.browser }}"
+            echo '```'
+            grep -E "Exécution|→|ÉCHEC|RÉSULTAT|Error" browser-${{ matrix.browser }}.log || echo "Aucun journal produit"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Publier journal et capture
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: browser-${{ matrix.browser }}
+          path: |
+            browser-${{ matrix.browser }}.log
+            screenshot-${{ matrix.browser }}.png
+          if-no-files-found: ignore
