@@ -36,15 +36,18 @@ La partie démarre à la première touche de direction.
 | `snake.js` | Logique pure (déplacement, collisions, pommes, score), sans DOM |
 | `game.js` | Rendu canvas, clavier, boucle de jeu, écran de fin |
 | `tests/snake.test.js` | Tests unitaires de la logique |
-| `tests/browser_check.py` | Test de bout en bout dans Chromium (facultatif) |
+| `tests/game.test.js` | Tests de l'interface `game.js` avec DOM et minuteurs simulés |
+| `tests/browser_check.py` | Test de bout en bout déterministe dans un vrai navigateur (facultatif) |
 
 ### Tests
 
 ```bash
-# Tests unitaires (Node.js 18+, aucune dépendance)
+# Tests unitaires et d'interface (Node.js 18+, aucune dépendance)
 node --test
 
 # Test navigateur de bout en bout (facultatif)
 pip install playwright && playwright install chromium
-python3 tests/browser_check.py
+python3 tests/browser_check.py --runs 5          # options : --browser firefox|webkit, --screenshot f.png
 ```
+
+Le crochet de test `window.__snake` n'est exposé qu'en ouvrant `index.html?test`.
