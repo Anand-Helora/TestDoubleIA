@@ -90,7 +90,11 @@ l'identifiant numérique empêche un compte homonyme. Ces critères s'appliquent
    `<!-- codex-review-state:v1 {...} -->`, avec, pour `code_review` et `security_review`, le
    `commit_sha` revu, le `status` et `has_unresolved_findings`. Le résumé Codex le plus récent fait foi.
 2. **Remarques inline** : commentaires de revue Codex racines (hors réponses), rattachés au commit de
-   leur revue, avec un badge `![P0..P3 Badge](https://img.shields.io/badge/...)`.
+   leur revue, avec un badge `![P0..P3 Badge](https://img.shields.io/badge/...)` et un marqueur de
+   section `<!-- codex-code-review-finding:v1 -->`. Ce format a été observé sur la revue Codex de la
+   PR #6. Le marqueur `codex-security-review-finding:v1` est **supposé** par symétrie et n'a pas encore
+   été observé. Une remarque sans marqueur est rattachée à `code_review`, avec la note
+   `SECTION_DEFAULTED`.
 3. **Statut des fils** (résolu / obsolète) : uniquement disponible via GraphQL (`reviewThreads`).
 
 Le texte des remarques n'est **jamais** affiché, enregistré ni interprété. Seuls l'identifiant, la
@@ -114,17 +118,48 @@ priorité et un lien `https://github.com/<dépôt>/…` validé sont repris.
 | `UNVERIFIED` | `REVIEW_IN_PROGRESS` | Revue Codex en cours sur le SHA courant |
 | `UNVERIFIED` | `SUMMARY_STATE_UNREADABLE`, `SUMMARY_AMBIGUOUS` | Marqueur d'état illisible, invalide ou sans indicateur |
 | `UNVERIFIED` | `FINDING_STATUS_UNKNOWN` | Remarque sans badge reconnu, ou statut du fil inconnu (GraphQL indisponible) |
-| `UNVERIFIED` | `CONTRADICTORY_SIGNALS` | Le résumé et les fils de discussion se contredisent |
+| `UNVERIFIED` | `CONTRADICTORY_SIGNALS` | Le résumé et les fils **d'une même section** se contredisent (détail dans `notes`) |
 
 Ni `NO_ACTION` ni `UNVERIFIED` ne mènent à une action. Le job réussit dans tous ces cas ; seule une
 erreur interne du détecteur le fait échouer.
 
+## Sections de revue et contradictions
+
+Codex publie deux sections indépendantes dans son résumé : `code_review` et `security_review`. Chaque
+remarque inline est rattachée à sa section par son marqueur. Les contradictions ne sont évaluées
+**qu'à l'intérieur d'une même section** :
+
+- résumé de la section « sans remarque non résolue » alors qu'un de ses fils est non résolu →
+  `UNVERIFIED` (`<section>:SUMMARY_CLEAN_THREAD_UNRESOLVED`) ;
+- résumé de la section « remarques non résolues » alors que tous ses fils sont résolus ou obsolètes →
+  `UNVERIFIED` (`<section>:SUMMARY_UNRESOLVED_THREADS_RESOLVED`).
+
+Des fils `code_review` résolus ne masquent donc plus une anomalie signalée indépendamment par
+`security_review` (revue Codex de la PR #6, P2 n°2).
+
+Une remarque inline non résolue est retenue même si le résumé de la même section est encore
+`running` : c'est la séquence réellement observée sur la PR #6. Les remarques ligne par ligne ont été
+publiées à 22:20 et le résumé est passé à `completed` à 22:32.
+
 ## Idempotence et limite de cycles
 
-- **Clé** : `codex-fix:pr-<n>:<sha courant>:<empreinte des identifiants de remarques>`. Les identifiants
-  sont ceux des commentaires (et de la section du résumé), pas leur texte ni leur date. Les événements en
-  double (création puis édition du résumé, revue, remarque inline) et les éditions de texte produisent
-  donc **la même clé**. Une nouvelle remarque ou un nouveau SHA produit une nouvelle clé.
+- **Clé** : `codex-fix:pr-<n>:<sha courant>:<sections>`, par exemple
+  `codex-fix:pr-6:e1bcd54…:code_review` ou `…:code_review+security_review`.
+  Une observation est identifiée par sa **section**, quel que soit le signal qui la porte (remarque inline
+  ou résumé), et indépendamment des identifiants, du texte et des dates des commentaires. La clé est donc
+  identique :
+  - quand une remarque inline est suivie du résumé final (ou l'inverse) — revue Codex de la PR #6,
+    P2 n°1 ;
+  - pour la création puis l'édition du résumé, la revue et la remarque inline ;
+  - après une édition de texte.
+
+  Un nouveau SHA ou une nouvelle section produit une nouvelle clé.
+- **Compromis assumé** : deux remarques distinctes de la **même section sur le même SHA** (par exemple
+  une seconde revue manuelle du même commit) partagent la clé. C'est cohérent avec la règle « au plus un
+  cycle de correction automatique par SHA ». La remarque supplémentaire reste visible dans la liste des
+  remarques retenues et sera traitée au cycle suivant, sur le nouveau SHA. Une identité plus fine par
+  remarque n'est pas possible, car le résumé n'indique qu'un booléen par section et ne permet pas de
+  relier ses remarques aux commentaires inline.
 - **Phase A** : le workflow étant en lecture seule, les clés déjà traitées ne sont **pas mémorisées**.
   Plusieurs exécutions peuvent afficher la même décision avec la même clé. Le détecteur prend déjà en
   charge un ensemble de clés connues (`seenKeys`, testé), que la phase B alimentera depuis un stockage
@@ -165,10 +200,12 @@ node tools/codex-feedback/detect.js --fixture tests/fixtures/codex/finding-on-he
 
 ## Limites techniques identifiées
 
-1. **Format Codex non documenté publiquement** : le marqueur `codex-review-state:v1` et les badges
-   P0–P3 ont été observés, pas spécifiés. En cas de changement, le détecteur répond `UNVERIFIED` ou
-   ignore le contenu, et ne déclenche jamais d'action à tort. Le format des revues inline avec
-   remarques n'a pas encore été observé sur ce dépôt : la PR #4 n'en contenait aucune.
+1. **Format Codex non documenté publiquement** : le marqueur `codex-review-state:v1`, les badges P0–P3
+   et le marqueur `codex-code-review-finding:v1` ont été observés (PR #4 et #6), pas spécifiés. Le format
+   des remarques `security_review` n'a pas été observé. En cas de changement, le détecteur répond
+   `UNVERIFIED` ou ignore le contenu, et ne déclenche jamais d'action à tort. Une remarque de sécurité
+   sans marqueur reconnu serait rattachée à `code_review` : ses contradictions seraient alors évaluées
+   avec la mauvaise section.
 2. **Identité figée** : si Codex change de compte ou d'application, plus rien n'est détecté (échec sûr)
    tant que `CODEX` n'est pas mis à jour.
 3. **Activation après fusion seulement** pour les résumés (`issue_comment`) et le lancement manuel. Avant
