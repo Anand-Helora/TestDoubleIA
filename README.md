@@ -14,7 +14,7 @@ Ouvrir `index.html` dans un navigateur (double-clic, fonctionne aussi en `file:/
 | Action | Touches |
 | --- | --- |
 | Déplacer | Flèches, ZQSD (AZERTY) ou WASD (QWERTY) |
-| Pause / reprise | Espace |
+| Pause / reprise | Espace, ou bouton « Pause » / « Reprendre » sous le plateau (souris, tactile, clavier) |
 | Recommencer après une partie | Entrée ou bouton « Recommencer » |
 
 La partie démarre à la première touche de direction.
@@ -26,6 +26,9 @@ La partie démarre à la première touche de direction.
 - Toucher un mur ou son propre corps termine la partie (« Partie terminée »).
 - Le demi-tour immédiat est impossible, y compris avec deux touches pressées très vite.
 - Si le serpent remplit toute la grille, la partie est gagnée.
+- Le bouton « Pause » est désactivé avant le premier déplacement et en fin de partie. Il partage
+  l'état de la touche Espace et de la pause automatique au changement d'onglet : un seul état de pause,
+  un seul minuteur.
 - Le meilleur score (« Record ») s'affiche à côté du score, se met à jour dès qu'il est dépassé
   et est conservé entre les sessions dans le `localStorage` du navigateur (clé `snake.bestScore`).
   Si le stockage est indisponible, bloqué ou contient une valeur invalide, le jeu reste jouable

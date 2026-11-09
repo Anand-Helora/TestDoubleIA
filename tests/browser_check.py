@@ -329,6 +329,94 @@ def storage_scenarios(browser, url):
     return failed
 
 
+def pause_button_scenarios(browser):
+    """Bouton Pause / Reprendre (Issue #7) : souris, tactile, clavier, accessibilité, mobile."""
+    context = browser.new_context(viewport={"width": 375, "height": 740}, has_touch=True)
+    page = context.new_page()
+    errors = []
+    page.on("pageerror", lambda e: errors.append(str(e)))
+    install_frozen_clock(page)
+    page.add_init_script(INIT_SCRIPT)
+    page.goto(URL)
+    freeze_clock(page)
+    run = Run(page)
+    paused = lambda: page.evaluate("window.__snake.isPaused()")
+    label = lambda: page.text_content("#pause")
+
+    # Accessibilité de base et état initial
+    btn = page.get_by_role("button", name="Pause")
+    run.check("bouton accessible (rôle button, nom « Pause »)", btn.count() == 1)
+    run.check("désactivé avant le démarrage", page.is_disabled("#pause"))
+    run.check("indisponibilité expliquée (aria-describedby)",
+              page.evaluate("document.getElementById(document.getElementById('pause').getAttribute('aria-describedby')).textContent")
+              .startswith("Disponible"))
+    box, scores, board = (page.locator(sel).bounding_box() for sel in ("#pause", ".scores", "#board"))
+    run.check("mobile 375 px : bouton visible, sous le plateau, sans masquer les scores",
+              box["y"] >= board["y"] + board["height"] and box["y"] + box["height"] <= 740
+              and box["y"] > scores["y"] + scores["height"] and box["height"] >= 44)
+
+    # Démarrage puis pause à la souris
+    run.setup([[10, 15], [10, 16], [10, 17]], [0, 0], "right")
+    page.keyboard.press("ArrowUp")
+    run.ticks(1)
+    run.check("activé une fois la partie commencée", page.is_enabled("#pause") and label() == "Pause")
+    page.click("#pause")
+    frozen = run.state()["snake"]
+    run.ticks(5)
+    run.check("clic sur Pause : déplacement figé, libellé « Reprendre »",
+              paused() and run.state()["snake"] == frozen and label() == "Reprendre")
+    run.check("nom accessible mis à jour", page.get_by_role("button", name="Reprendre").count() == 1)
+    page.click("#pause")
+    run.ticks(3)
+    run.check("clic sur Reprendre : 3 cases en 3 pas (un seul minuteur)",
+              not paused() and run.state()["snake"][0] == {"x": 10, "y": 11} and label() == "Pause")
+
+    # Tactile
+    page.tap("#pause")
+    run.check("toucher : pause", paused() and label() == "Reprendre")
+    page.tap("#pause")
+    run.check("toucher : reprise", not paused() and label() == "Pause")
+
+    # Espace avec le focus sur le bouton : activation native, une seule bascule
+    page.focus("#pause")
+    page.keyboard.press(" ")
+    run.check("Espace sur le bouton focalisé : une seule bascule (pause)", paused() and label() == "Reprendre")
+    page.keyboard.press(" ")
+    run.check("Espace sur le bouton focalisé : une seule bascule (reprise)", not paused())
+    page.keyboard.press("Enter")
+    run.check("Entrée sur le bouton focalisé : une seule bascule", paused())
+    page.keyboard.press("Enter")
+
+    # Espace hors du bouton : synchronisé avec le bouton
+    page.focus("#board")
+    page.keyboard.press(" ")
+    run.check("Espace sur le plateau : pause et bouton synchronisé", paused() and label() == "Reprendre")
+    page.click("#pause")
+    run.check("reprise au bouton après pause au clavier", not paused() and label() == "Pause")
+    page.focus("#board")
+    y0 = run.state()["snake"][0]["y"]
+    run.ticks(2)
+    run.check("après toutes ces bascules : 1 case par pas", y0 - run.state()["snake"][0]["y"] == 2)
+
+    # Fin de partie, redémarrage
+    run.setup([[10, 1], [10, 2], [10, 3]], [0, 0], "up")
+    run.ticks(2)
+    run.check("fin de partie : bouton désactivé, libellé « Pause »",
+              run.state()["status"] == "over" and page.is_disabled("#pause") and label() == "Pause")
+    page.click("#restart")
+    run.check("redémarrage : bouton désactivé jusqu'à la première touche", page.is_disabled("#pause"))
+    page.keyboard.press("ArrowUp")  # le serpent part vers la droite : « gauche » serait un demi-tour
+    y = run.state()["snake"][0]
+    run.ticks(3)
+    run.check("nouvelle partie : bouton actif et vitesse normale",
+              page.is_enabled("#pause") and run.state()["snake"][0]["y"] == y["y"] - 3)
+    run.check("score et record toujours affichés", page.is_visible("#score") and page.is_visible("#best"))
+    run.check("aucune erreur JS (bouton Pause)", not errors)
+    failed = sum(not ok for _, ok in run.results)
+    context.close()
+    return failed
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--runs", type=int, default=1)
@@ -349,6 +437,9 @@ def main():
             print(f"  → {len(run.results) - len(failed)}/{len(run.results)} vérifications réussies")
             total_failed += len(failed)
             page.close()
+
+        print(f"Bouton Pause / Reprendre ({args.browser})")
+        total_failed += pause_button_scenarios(browser)
 
         server, http_url = start_server()
         print(f"Meilleur score et stockage ({args.browser}, {http_url})")
