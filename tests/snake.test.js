@@ -218,6 +218,20 @@ test('options invalides : RangeError', () => {
   }
 });
 
+test('Infinity, -Infinity et NaN refusés pour cols, rows et initialLength', () => {
+  for (const key of ['cols', 'rows', 'initialLength']) {
+    for (const value of [Infinity, -Infinity, NaN]) {
+      assert.throws(() => S.createGame({ [key]: value }), RangeError, `${key}=${value}`);
+    }
+  }
+});
+
+test('grande grille finie toujours acceptée (contrôle du correctif isFinite)', () => {
+  const st = S.createGame({ cols: 100, rows: 100, initialLength: 50 });
+  assert.equal(st.snake.length, 50);
+  assert.ok(insideGrid(st));
+});
+
 test('valeurs par défaut inchangées : 20×20, longueur 3, au centre', () => {
   const st = S.createGame({ random: () => 0 });
   assert.equal(st.cols, 20);

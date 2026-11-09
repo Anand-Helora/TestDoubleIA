@@ -50,7 +50,8 @@
   }
 
   function isPositiveInt(n) {
-    return typeof n === 'number' && n >= 1 && Math.floor(n) === n;
+    // isFinite (ES5) exclut Infinity, -Infinity et NaN.
+    return typeof n === 'number' && isFinite(n) && n >= 1 && Math.floor(n) === n;
   }
 
   /**
