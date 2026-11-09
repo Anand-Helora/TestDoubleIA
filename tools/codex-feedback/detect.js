@@ -178,6 +178,22 @@ function idempotencyKey(prNumber, headSha, sections) {
   return `codex-fix:pr-${prNumber}:${headSha}:${canonical}`;
 }
 
+/**
+ * Normalise un identifiant de commentaire en chaîne décimale canonique, sans perte
+ * de précision. Les identifiants GitHub dépassent l'Int GraphQL 32 bits
+ * (ex. 4518670008) : côté GraphQL on lit fullDatabaseId (BigInt, sérialisé en
+ * chaîne), côté REST un nombre JSON. Retourne null si la valeur est invalide ou
+ * hors de la plage des entiers JavaScript sûrs (correspondance non fiable).
+ */
+function normalizeId(value) {
+  if (typeof value === 'number') return Number.isSafeInteger(value) && value > 0 ? String(value) : null;
+  if (typeof value !== 'string' || !/^[1-9][0-9]{0,15}$/.test(value)) return null;
+  return Number.isSafeInteger(Number(value)) ? value : null;
+}
+
+/** Marque d'un identifiant de fil présent plusieurs fois (correspondance ambiguë). */
+const AMBIGUOUS = Object.freeze({ ambiguous: true });
+
 function sectionOf(body) {
   const m = typeof body === 'string' ? SECTION_MARKER_RE.exec(body) : null;
   return m ? { section: `${m[1]}_review`, defaulted: false } : { section: 'code_review', defaulted: true };
@@ -230,7 +246,12 @@ function analyze(trigger, api, options = {}) {
     .map((c) => {
       const commit = reviewCommit.get(c.pull_request_review_id) || c.original_commit_id || null;
       const badge = typeof c.body === 'string' ? BADGE_RE.exec(c.body) : null;
-      const thread = api.threads && isObject(api.threads[c.id]) ? api.threads[c.id] : null;
+      const key = normalizeId(c.id);
+      const entry = api.threads && key !== null && Object.prototype.hasOwnProperty.call(api.threads, key)
+        ? api.threads[key] : null;
+      // Fil introuvable, ambigu ou mal formé → statut inconnu (UNVERIFIED si rien d'autre ne confirme).
+      const thread = isObject(entry) && !entry.ambiguous &&
+        typeof entry.isResolved === 'boolean' && typeof entry.isOutdated === 'boolean' ? entry : null;
       const { section, defaulted } = sectionOf(c.body);
       return {
         id: c.id,
@@ -251,6 +272,7 @@ function analyze(trigger, api, options = {}) {
   const resolvedInline = inlineOnHead.filter((c) => c.resolved === true || c.outdated === true);
   const unknownInline = inlineOnHead.filter((c) => !c.priority || c.resolved === null);
   if (api.threads === null && inlineOnHead.length) notes.push('THREAD_STATUS_UNAVAILABLE');
+  if (api.threads && inlineOnHead.some((c) => c.resolved === null)) notes.push('THREAD_NOT_MATCHED');
   if (inlineOnHead.some((c) => c.sectionDefaulted)) notes.push('SECTION_DEFAULTED');
 
   // Résumé sur le SHA courant
@@ -386,10 +408,15 @@ async function ghList(pathname, ctx, maxPages = 10) {
   return items;
 }
 
-/** Statut des fils de discussion (résolu / obsolète) : uniquement disponible en GraphQL. */
+/**
+ * Statut des fils de discussion (résolu / obsolète) : uniquement disponible en GraphQL.
+ * Le commentaire racine est identifié par fullDatabaseId (BigInt) et non par
+ * databaseId (Int 32 bits, insuffisant pour les identifiants actuels de GitHub).
+ * Retourne { idCanonique: { isResolved, isOutdated } } ou null si indisponible.
+ */
 async function fetchThreads(owner, name, number, ctx) {
   const query = `query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){pullRequest(number:$number){
-    reviewThreads(first:100){pageInfo{hasNextPage} nodes{isResolved isOutdated comments(first:1){nodes{databaseId}}}}}}}`;
+    reviewThreads(first:100){pageInfo{hasNextPage} nodes{isResolved isOutdated comments(first:1){nodes{fullDatabaseId}}}}}}}`;
   const res = await ctx.fetch(ctx.graphqlUrl, {
     method: 'POST', // requête GraphQL de lecture (query), aucune mutation
     headers: { Authorization: `Bearer ${ctx.token}`, 'Content-Type': 'application/json' },
@@ -397,13 +424,23 @@ async function fetchThreads(owner, name, number, ctx) {
   });
   if (!res.ok) return null;
   const data = await res.json();
-  const threads = data && data.data && data.data.repository && data.data.repository.pullRequest &&
+  // Toute erreur GraphQL (même partielle) rend la réponse non fiable.
+  if (!isObject(data) || (Array.isArray(data.errors) && data.errors.length)) return null;
+  const threads = data.data && data.data.repository && data.data.repository.pullRequest &&
     data.data.repository.pullRequest.reviewThreads;
-  if (!threads || threads.pageInfo.hasNextPage) return null;
+  if (!isObject(threads) || !isObject(threads.pageInfo) || threads.pageInfo.hasNextPage !== false ||
+      !Array.isArray(threads.nodes)) return null;
+  return buildThreadMap(threads.nodes);
+}
+
+/** Construit la table des fils à partir des nœuds GraphQL (fonction pure, testée). */
+function buildThreadMap(nodes) {
   const map = {};
-  for (const t of threads.nodes) {
-    const root = t.comments && t.comments.nodes && t.comments.nodes[0];
-    if (root && Number.isSafeInteger(root.databaseId)) map[root.databaseId] = { isResolved: t.isResolved, isOutdated: t.isOutdated };
+  for (const t of nodes) {
+    const root = isObject(t) && isObject(t.comments) && Array.isArray(t.comments.nodes) ? t.comments.nodes[0] : null;
+    const key = isObject(root) ? normalizeId(root.fullDatabaseId) : null;
+    if (key === null || typeof t.isResolved !== 'boolean' || typeof t.isOutdated !== 'boolean') continue;
+    map[key] = Object.prototype.hasOwnProperty.call(map, key) ? AMBIGUOUS : { isResolved: t.isResolved, isOutdated: t.isOutdated };
   }
   return map;
 }
@@ -504,7 +541,7 @@ async function run(env, deps = {}) {
 module.exports = {
   CODEX, DECISION, MAX_FIX_CYCLES,
   isCodexUser, isCodexAuthored, readTrigger, parseReviewState, analyze, evaluate,
-  renderSummary, idempotencyKey, fetchApiData, loadFixture, fixturePath, run
+  renderSummary, idempotencyKey, fetchApiData, fetchThreads, buildThreadMap, normalizeId, loadFixture, fixturePath, run
 };
 
 if (require.main === module) {
