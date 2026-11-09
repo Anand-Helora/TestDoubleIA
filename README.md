@@ -73,3 +73,9 @@ Le crochet de test `window.__snake` n'est exposé qu'en ouvrant `index.html?test
 - `.github/workflows/codex-feedback-dryrun.yml` : détection **en lecture seule** des anomalies signalées
   par Codex sur les PR ouvertes (Issue #5, phase A). Aucune correction automatique, aucun secret,
   aucune permission d'écriture. Voir [docs/codex-feedback-dryrun.md](docs/codex-feedback-dryrun.md).
+- `.github/workflows/codex-feedback-gate.yml` : passerelle de décision Codex → Claude (Issue #9,
+  phase B1). Elle applique les garde-fous (même dépôt, branche `claude/*`, auteur autorisé, émetteur Codex),
+  la déduplication persistante (refs Git `refs/codex-gate/v1/**` créées de façon atomique) et les limites
+  (1 tentative par SHA, 2 cycles par PR). **Aucun appel à Claude, aucun secret, aucune fusion** ; la
+  réservation reste désactivée tant que la variable `CODEX_GATE_ENABLED` ne vaut pas `true`. Voir
+  [docs/codex-feedback-gate.md](docs/codex-feedback-gate.md).
