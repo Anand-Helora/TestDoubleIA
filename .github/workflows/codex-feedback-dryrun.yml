@@ -37,6 +37,9 @@ on:
           - malformed-payload
           - review-in-progress
           - cycle-limit
+          - summary-after-inline
+          - security-finding-resolved-code-threads
+          - real-pr6-review
 
 permissions:
   contents: read
