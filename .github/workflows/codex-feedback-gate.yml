@@ -1,0 +1,142 @@
+# Passerelle de décision Codex → correction automatique (Issue #9, phase B1).
+# AUCUN appel à un agent ni à une API d'IA, aucun secret, aucune correction, aucune fusion.
+# Décisions : WOULD_DISPATCH_CLAUDE, SKIP ou UNVERIFIED (journal + récapitulatif).
+# Documentation : docs/codex-feedback-gate.md
+name: Codex feedback gate (B1)
+
+on:
+  # Résumé Codex (créé puis édité à la fin de chaque revue). Les événements issue_comment
+  # utilisent toujours la version du workflow de la branche par défaut : le code d'une PR
+  # ne peut pas modifier cette passerelle.
+  issue_comment:
+    types: [created, edited]
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: demo (hors ligne), evaluate-pr (lecture seule), store-self-test (preuve du stockage)
+        required: true
+        type: choice
+        default: demo
+        options:
+          - demo
+          - evaluate-pr
+          - store-self-test
+      pr_number:
+        description: Numéro de PR (mode evaluate-pr)
+        required: false
+        type: string
+
+# Aucune permission par défaut : chaque job déclare le strict nécessaire.
+permissions: {}
+
+jobs:
+  analyze:
+    name: Analyse (lecture seule)
+    # Pré-filtre : résumé publié ET envoyé par le compte bot Codex sur une PR ouverte.
+    # gate.js revérifie l'identité complète (login, identifiant, type, application) et relit tout via l'API.
+    if: >-
+      (github.event_name == 'workflow_dispatch' && inputs.mode != 'store-self-test') ||
+      (github.event_name == 'issue_comment' && github.event.issue.pull_request &&
+       github.event.issue.state == 'open' &&
+       github.event.comment.user.login == 'chatgpt-codex-connector[bot]' &&
+       github.event.sender.login == 'chatgpt-codex-connector[bot]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+      issues: read
+    outputs:
+      eligible: ${{ steps.gate.outputs.eligible }}
+      pr_number: ${{ steps.gate.outputs.pr_number }}
+      head_sha: ${{ steps.gate.outputs.head_sha }}
+      sections: ${{ steps.gate.outputs.sections }}
+    steps:
+      # Code de confiance uniquement : branche par défaut (jamais le code de la PR).
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'issue_comment' && github.event.repository.default_branch || github.ref }}
+          persist-credentials: false
+          sparse-checkout: |
+            tools/codex-feedback
+          sparse-checkout-cone-mode: true
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Évaluer la revue Codex et les garde-fous
+        id: gate
+        env:
+          GATE_PHASE: ${{ inputs.mode == 'demo' && 'demo' || 'analyze' }}
+          GITHUB_TOKEN: ${{ github.token }}   # jeton automatique, limité aux lectures ci-dessus
+          CODEX_GATE_ENABLED: ${{ vars.CODEX_GATE_ENABLED }}
+        run: node tools/codex-feedback/gate.js
+
+  reserve:
+    name: Réservation persistante (aucune correction)
+    needs: analyze
+    # Interrupteur global : variable de dépôt CODEX_GATE_ENABLED (absente = désactivé).
+    if: >-
+      github.event_name == 'issue_comment' &&
+      needs.analyze.outputs.eligible == 'true' &&
+      vars.CODEX_GATE_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write        # uniquement pour créer les refs refs/codex-gate/v1/** (garde dans gate.js)
+      pull-requests: read
+    concurrency:
+      group: codex-gate-reserve-${{ needs.analyze.outputs.pr_number }}
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+          sparse-checkout: |
+            tools/codex-feedback
+          sparse-checkout-cone-mode: true
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Revérifier la PR et réserver SHA + cycle
+        env:
+          GATE_PHASE: reserve
+          GITHUB_TOKEN: ${{ github.token }}
+          CODEX_GATE_ENABLED: ${{ vars.CODEX_GATE_ENABLED }}
+          GATE_PR_NUMBER: ${{ needs.analyze.outputs.pr_number }}
+          GATE_HEAD_SHA: ${{ needs.analyze.outputs.head_sha }}
+          GATE_SECTIONS: ${{ needs.analyze.outputs.sections }}
+        run: node tools/codex-feedback/gate.js
+
+  store-self-test:
+    name: Auto-test du stockage persistant
+    # Lancement manuel par le propriétaire du dépôt uniquement.
+    if: >-
+      github.event_name == 'workflow_dispatch' && inputs.mode == 'store-self-test' &&
+      github.actor == github.repository_owner
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write        # refs temporaires refs/codex-gate/v1/selftest/<run_id>/**, supprimées à la fin
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+          sparse-checkout: |
+            tools/codex-feedback
+          sparse-checkout-cone-mode: true
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Prouver création atomique, doublon, course concurrente et nettoyage
+        env:
+          GATE_PHASE: self-test
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node tools/codex-feedback/gate.js

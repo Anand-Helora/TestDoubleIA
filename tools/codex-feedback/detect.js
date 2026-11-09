@@ -541,7 +541,7 @@ async function run(env, deps = {}) {
 module.exports = {
   CODEX, DECISION, MAX_FIX_CYCLES,
   isCodexUser, isCodexAuthored, readTrigger, parseReviewState, analyze, evaluate,
-  renderSummary, idempotencyKey, fetchApiData, fetchThreads, buildThreadMap, normalizeId, loadFixture, fixturePath, run
+  renderSummary, clean, idempotencyKey, fetchApiData, fetchThreads, buildThreadMap, normalizeId, loadFixture, fixturePath, run
 };
 
 if (require.main === module) {
