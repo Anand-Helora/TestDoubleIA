@@ -69,5 +69,31 @@ h1 { margin: 0; font-size: 1.6rem; letter-spacing: 0.04em; }
 #restart:hover { background: #c8f77d; }
 #restart:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
 
+.controls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 10px;
+}
+
+#pause {
+  font: inherit;
+  font-weight: 600;
+  min-width: 7.5em;
+  min-height: 44px; /* cible tactile confortable */
+  padding: 8px 18px;
+  border: 2px solid #b5f05a;
+  border-radius: 6px;
+  background: transparent;
+  color: #e8efe9;
+  cursor: pointer;
+  touch-action: manipulation; /* pas de délai de double-tap sur mobile */
+}
+#pause:hover:not(:disabled) { background: rgba(181, 240, 90, 0.12); }
+#pause:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+#pause:disabled { border-color: #3a5544; color: #6f8577; cursor: not-allowed; }
+
+.hint { font-size: 0.85rem; color: #9fb3a5; }
+
 .message { min-height: 1.4em; margin: 10px 0 4px; }
 .help { margin: 0; font-size: 0.85rem; color: #9fb3a5; }

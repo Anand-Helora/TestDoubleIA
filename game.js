@@ -18,6 +18,8 @@
   var overlay = document.getElementById('overlay');
   var overlayTitle = document.getElementById('overlay-title');
   var restartBtn = document.getElementById('restart');
+  var pauseBtn = document.getElementById('pause');
+  var pauseHint = document.getElementById('pause-hint');
 
   var state = null;
   var timer = null;   // un seul minuteur actif à la fois
@@ -50,6 +52,7 @@
     bestAtStart = best.get();
     overlay.hidden = true;
     updateScore();
+    updatePauseButton();
     setMessage('Appuyez sur une flèche (ou ZQSD / WASD) pour commencer.');
     draw();
     canvas.focus();
@@ -68,20 +71,42 @@
     overlay.hidden = false;
     var record = state.score > bestAtStart ? ' Nouveau record !' : '';
     setMessage('Score final : ' + state.score + '.' + record + ' Appuyez sur Entrée ou cliquez sur « Recommencer ».');
+    updatePauseButton();
     restartBtn.focus();
   }
 
+  /**
+   * Unique point d'entrée de la pause : touche Espace, bouton Pause/Reprendre
+   * et pause automatique au changement d'onglet passent tous par ici, ce qui
+   * garde un seul état (`paused`) et un seul minuteur.
+   */
   function togglePause() {
     if (!started || state.status !== 'playing') return;
     paused = !paused;
     if (paused) {
       stopLoop();
-      setMessage('Pause — appuyez sur Espace pour reprendre.');
+      setMessage('Pause — appuyez sur Espace ou sur « Reprendre » pour continuer.');
     } else {
       startLoop();
       setMessage('');
     }
+    updatePauseButton();
     draw();
+  }
+
+  /**
+   * Met le bouton en accord avec l'état du jeu. Le libellé visible change
+   * (« Pause » / « Reprendre ») et sert de nom accessible : aria-pressed n'est
+   * pas utilisé, car combiné à un libellé qui change il serait contradictoire
+   * (« Reprendre, enfoncé »). Le changement d'état est aussi annoncé par la
+   * zone aria-live du message.
+   */
+  function updatePauseButton() {
+    var available = started && state.status === 'playing';
+    pauseBtn.disabled = !available;
+    pauseBtn.textContent = available && paused ? 'Reprendre' : 'Pause';
+    pauseHint.textContent = available ? '' :
+      (state.status === 'playing' ? 'Disponible une fois la partie commencée.' : 'Disponible pendant une partie.');
   }
 
   function updateScore() {
@@ -132,6 +157,17 @@
   function onKeyDown(e) {
     if (e.ctrlKey || e.metaKey || e.altKey) return;
 
+    // Espace ou Entrée sur un bouton actif : seule l'activation native du
+    // bouton (événement click) déclenche l'action. Le bouton garde ainsi son
+    // comportement clavier standard, et la pause ne peut pas être basculée à
+    // la fois par ce gestionnaire et par le click, sans dépendre de la façon
+    // dont preventDefault() interagit avec l'activation native.
+    var t = e.target;
+    if (t && t.tagName === 'BUTTON' && !t.disabled &&
+        (e.key === ' ' || e.key === 'Spacebar' || e.key === 'Enter')) {
+      return;
+    }
+
     if (state.status !== 'playing') {
       if (e.key === 'Enter' && document.activeElement !== restartBtn) {
         e.preventDefault();
@@ -158,11 +194,13 @@
       started = true;
       setMessage('');
       startLoop();
+      updatePauseButton();
     }
   }
 
   document.addEventListener('keydown', onKeyDown);
   restartBtn.addEventListener('click', newGame);
+  pauseBtn.addEventListener('click', togglePause);
 
   // Met la partie en pause si l'onglet passe en arrière-plan.
   document.addEventListener('visibilitychange', function () {
@@ -176,6 +214,7 @@
   if (/[?&]test(=|&|$)/.test(window.location.search)) {
     window.__snake = {
       getState: function () { return state; },
+      isPaused: function () { return paused; },
       restart: newGame
     };
   }

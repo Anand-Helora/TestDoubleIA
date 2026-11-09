@@ -36,7 +36,10 @@ let doc;
 function loadGame({ search = '?test', random = () => 0, setupWindow = null } = {}) {
   const els = {
     board: fakeElement(), score: fakeElement(), best: fakeElement(), message: fakeElement(),
-    overlay: fakeElement(), 'overlay-title': fakeElement(), restart: fakeElement()
+    overlay: fakeElement(), 'overlay-title': fakeElement(),
+    restart: fakeElement({ tagName: 'BUTTON', disabled: false }),
+    pause: fakeElement({ tagName: 'BUTTON', disabled: true, textContent: 'Pause' }),
+    'pause-hint': fakeElement()
   };
   const docListeners = {};
   doc = {
@@ -87,7 +90,14 @@ function loadGame({ search = '?test', random = () => 0, setupWindow = null } = {
     for (const fn of docListeners.visibilitychange || []) fn();
   }
 
-  return { els, clock, key, setHidden, window, api: window.__snake };
+  /** Clic (souris, tactile ou activation native au clavier) : ignoré si le bouton est désactivé. */
+  function click(el) {
+    if (el.disabled) return false;
+    for (const fn of el.listeners.click || []) fn({ type: 'click', target: el });
+    return true;
+  }
+
+  return { els, clock, key, click, setHidden, window, api: window.__snake };
 }
 
 const head = (g) => ({ ...g.api.getState().snake[0] });
@@ -310,4 +320,168 @@ test('valeurs corrompues ou négatives dans localStorage : record 0', () => {
     eatApples(g, 1);
     assert.equal(storage.data[BEST_KEY], '1', `${raw} remplacé par un record valide`);
   }
+});
+
+// --- Bouton Pause / Reprendre (Issue #7) ---
+
+/** État visible du bouton */
+const btn = (g) => ({ disabled: g.els.pause.disabled, label: g.els.pause.textContent });
+
+test('bouton Pause : désactivé avant le démarrage, avec une explication', () => {
+  const g = loadGame();
+  assert.deepEqual(btn(g), { disabled: true, label: 'Pause' });
+  assert.match(g.els['pause-hint'].textContent, /partie commencée/);
+  assert.equal(g.click(g.els.pause), false);
+  assert.equal(g.clock.count(), 0, 'aucun minuteur lancé par le bouton');
+});
+
+test('bouton Pause : activé au démarrage, fige réellement le déplacement', () => {
+  const g = loadGame();
+  g.key('ArrowUp');
+  assert.deepEqual(btn(g), { disabled: false, label: 'Pause' });
+  assert.equal(g.els['pause-hint'].textContent, '');
+  g.clock.advance(120);
+  g.click(g.els.pause);
+  assert.equal(g.api.isPaused(), true);
+  assert.deepEqual(btn(g), { disabled: false, label: 'Reprendre' });
+  assert.equal(g.clock.count(), 0);
+  assert.match(g.els.message.textContent, /Pause/);
+  const frozen = head(g);
+  g.clock.advance(120 * 10);
+  assert.deepEqual(head(g), frozen, 'aucun déplacement pendant la pause');
+});
+
+test('bouton Reprendre : relance un unique minuteur, vitesse inchangée', () => {
+  const g = loadGame();
+  g.key('ArrowDown');
+  for (let i = 0; i < 6; i++) {           // pause / reprise répétées
+    g.click(g.els.pause);
+    g.click(g.els.pause);
+    assert.ok(g.clock.count() <= 1);
+  }
+  assert.equal(g.api.isPaused(), false);
+  assert.deepEqual(btn(g), { disabled: false, label: 'Pause' });
+  assert.equal(g.clock.count(), 1);
+  const y0 = head(g).y;
+  g.clock.advance(600);
+  assert.equal(head(g).y - y0, 5, '5 pas en 600 ms : un seul minuteur');
+});
+
+test('Espace et bouton restent synchronisés dans les deux sens', () => {
+  const g = loadGame();
+  g.key('ArrowUp');
+  g.key(' ');                                          // pause au clavier
+  assert.deepEqual(btn(g), { disabled: false, label: 'Reprendre' });
+  g.click(g.els.pause);                                // reprise au bouton
+  assert.equal(g.api.isPaused(), false);
+  assert.equal(g.clock.count(), 1);
+  g.click(g.els.pause);                                // pause au bouton
+  g.key(' ');                                          // reprise au clavier
+  assert.equal(g.api.isPaused(), false);
+  assert.deepEqual(btn(g), { disabled: false, label: 'Pause' });
+  assert.equal(g.clock.count(), 1);
+});
+
+test('pause automatique au changement d\'onglet : bouton à jour, reprise au bouton', () => {
+  const g = loadGame();
+  g.key('ArrowUp');
+  g.setHidden(true);
+  assert.deepEqual(btn(g), { disabled: false, label: 'Reprendre' });
+  g.setHidden(false);
+  assert.equal(g.api.isPaused(), true, 'reste en pause au retour, comme avant');
+  g.click(g.els.pause);
+  assert.equal(g.api.isPaused(), false);
+  assert.equal(g.clock.count(), 1);
+});
+
+test('Espace avec le focus sur le bouton : une seule bascule (activation native)', () => {
+  const g = loadGame();
+  g.key('ArrowUp');
+  // Le navigateur envoie keydown (cible : le bouton) puis, au relâchement, un click natif.
+  const ev = g.key(' ', { target: g.els.pause });
+  assert.equal(ev.defaultPrevented, false, 'activation native du bouton préservée');
+  assert.equal(g.api.isPaused(), false, 'le keydown seul ne bascule pas');
+  g.click(g.els.pause);                                 // click natif
+  assert.equal(g.api.isPaused(), true, 'une seule bascule au total');
+  g.key(' ', { target: g.els.pause });
+  g.click(g.els.pause);
+  assert.equal(g.api.isPaused(), false);
+  assert.equal(g.clock.count(), 1);
+  // Entrée sur le bouton : même règle
+  g.key('Enter', { target: g.els.pause });
+  assert.equal(g.api.isPaused(), false);
+  g.click(g.els.pause);
+  assert.equal(g.api.isPaused(), true);
+});
+
+test('Espace avec le focus ailleurs (plateau) : bascule au keydown, comme avant', () => {
+  const g = loadGame();
+  g.key('ArrowUp');
+  const ev = g.key(' ', { target: g.els.board });
+  assert.equal(ev.defaultPrevented, true);
+  assert.equal(g.api.isPaused(), true);
+});
+
+test('flèches avec le focus sur le bouton : direction prise en compte', () => {
+  const g = loadGame();
+  g.key('ArrowUp');
+  g.clock.advance(120);
+  g.key('ArrowLeft', { target: g.els.pause });
+  g.clock.advance(120);
+  assert.equal(g.api.getState().direction, 'left');
+});
+
+test('fin de partie : bouton désactivé, libellé Pause, aucun minuteur', () => {
+  const g = loadGame();
+  g.key('ArrowUp');
+  g.clock.advance(120 * 20);                            // mur du haut
+  assert.equal(g.api.getState().status, 'over');
+  assert.deepEqual(btn(g), { disabled: true, label: 'Pause' });
+  assert.match(g.els['pause-hint'].textContent, /pendant une partie/);
+  assert.equal(g.click(g.els.pause), false);
+  assert.equal(g.clock.count(), 0);
+});
+
+test('victoire : bouton désactivé, aucun minuteur', () => {
+  const g = loadGame();
+  g.key('ArrowLeft');
+  const s = g.api.getState();
+  const snake = [];
+  for (let y = 0; y < s.rows; y++) for (let x = 0; x < s.cols; x++) snake.push({ x, y });
+  snake.splice(0, 1);                                   // tout sauf (0,0), tête en (1,0)
+  Object.assign(s, { snake, food: { x: 0, y: 0 }, direction: 'left', queue: [] });
+  g.clock.advance(120);
+  assert.equal(s.status, 'won');
+  assert.deepEqual(btn(g), { disabled: true, label: 'Pause' });
+  assert.equal(g.clock.count(), 0);
+});
+
+test('redémarrage pendant une pause : bouton réinitialisé, aucun minuteur en trop', () => {
+  const g = loadGame();
+  g.key('ArrowUp');
+  g.click(g.els.pause);
+  assert.equal(btn(g).label, 'Reprendre');
+  g.api.restart();
+  assert.deepEqual(btn(g), { disabled: true, label: 'Pause' });
+  assert.equal(g.api.isPaused(), false);
+  assert.equal(g.clock.count(), 0);
+  g.key('ArrowDown');
+  assert.deepEqual(btn(g), { disabled: false, label: 'Pause' });
+  assert.equal(g.clock.count(), 1);
+});
+
+test('fin de partie puis Recommencer : état du bouton correct et record conservé', () => {
+  const storage = memoryStorage();
+  const g = loadGame({ setupWindow: (w) => { w.localStorage = storage; } });
+  startUp(g);
+  eatApples(g, 2);
+  g.click(g.els.pause);
+  g.click(g.els.pause);
+  g.clock.advance(120 * 20);
+  assert.equal(g.api.getState().status, 'over');
+  g.click(g.els.restart);
+  assert.deepEqual(btn(g), { disabled: true, label: 'Pause' });
+  assert.equal(g.els.score.textContent, '0');
+  assert.equal(g.els.best.textContent, '2');
+  assert.equal(g.clock.count(), 0);
 });
