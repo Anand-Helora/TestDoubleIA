@@ -24,6 +24,28 @@
   // Nombre maximal de changements de direction mémorisés entre deux pas.
   var MAX_QUEUE = 2;
 
+  /**
+   * Vitesses proposées (Issue #19) : durée d'un pas en millisecondes.
+   * « Normal » reprend exactement la cadence historique (120 ms).
+   */
+  var SPEEDS = {
+    slow: { label: 'Lent', intervalMs: 180 },
+    normal: { label: 'Normal', intervalMs: 120 },
+    fast: { label: 'Rapide', intervalMs: 80 }
+  };
+  var SPEED_ORDER = ['slow', 'normal', 'fast'];
+  var DEFAULT_SPEED = 'normal';
+
+  /** Vrai si `id` est une vitesse connue (propriété propre uniquement). */
+  function isSpeed(id) {
+    return typeof id === 'string' && Object.prototype.hasOwnProperty.call(SPEEDS, id);
+  }
+
+  /** Durée d'un pas pour la vitesse `id` ; vitesse normale si `id` est inconnu. */
+  function speedInterval(id) {
+    return SPEEDS[isSpeed(id) ? id : DEFAULT_SPEED].intervalMs;
+  }
+
   function cellKey(c) {
     return c.x + ',' + c.y;
   }
@@ -170,6 +192,11 @@
     changeDirection: changeDirection,
     step: step,
     spawnFood: spawnFood,
-    keyToDirection: keyToDirection
+    keyToDirection: keyToDirection,
+    SPEEDS: SPEEDS,
+    SPEED_ORDER: SPEED_ORDER,
+    DEFAULT_SPEED: DEFAULT_SPEED,
+    isSpeed: isSpeed,
+    speedInterval: speedInterval
   };
 });

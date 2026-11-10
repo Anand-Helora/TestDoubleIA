@@ -21,6 +21,9 @@ function fakeElement(extra = {}) {
     width: 400,
     height: 400,
     listeners,
+    attrs: {},
+    setAttribute(k, v) { this.attrs[k] = String(v); },
+    getAttribute(k) { return Object.prototype.hasOwnProperty.call(this.attrs, k) ? this.attrs[k] : null; },
     addEventListener(type, fn) { (listeners[type] ||= []).push(fn); },
     focus() { doc.activeElement = this; },
     getContext() {
@@ -43,7 +46,11 @@ function loadGame({ search = '?test', random = () => 0, setupWindow = null } = {
     'dir-up': fakeElement({ tagName: 'BUTTON', disabled: false }),
     'dir-down': fakeElement({ tagName: 'BUTTON', disabled: false }),
     'dir-left': fakeElement({ tagName: 'BUTTON', disabled: false }),
-    'dir-right': fakeElement({ tagName: 'BUTTON', disabled: false })
+    'dir-right': fakeElement({ tagName: 'BUTTON', disabled: false }),
+    'speed-hint': fakeElement(),
+    'speed-slow': fakeElement({ tagName: 'BUTTON', disabled: false }),
+    'speed-normal': fakeElement({ tagName: 'BUTTON', disabled: false }),
+    'speed-fast': fakeElement({ tagName: 'BUTTON', disabled: false })
   };
   const docListeners = {};
   doc = {
@@ -621,4 +628,127 @@ test('croix tactile : le record est mis à jour comme au clavier', () => {
   assert.equal(g.els.score.textContent, '2');
   assert.equal(g.els.best.textContent, '2');
   assert.equal(storage.data[BEST_KEY], '2');
+});
+
+// --- Sélecteur de vitesse (Issue #19) ---
+
+const SPEED_IDS = ['slow', 'normal', 'fast'];
+const speedBtn = (g, id) => g.els['speed-' + id];
+const pressed = (g) => SPEED_IDS.filter((id) => speedBtn(g, id).getAttribute('aria-pressed') === 'true');
+const speedDisabled = (g) => SPEED_IDS.map((id) => speedBtn(g, id).disabled);
+
+/** Démarre vers le bas depuis le haut du plateau et compte les cases parcourues en `ms`. */
+function stepsIn(g, ms) {
+  g.key('ArrowDown');
+  const st = g.api.getState();
+  st.snake = [{ x: 10, y: 3 }, { x: 9, y: 3 }, { x: 8, y: 3 }];
+  st.food = { x: 0, y: 0 };
+  const y0 = head(g).y;
+  g.clock.advance(ms);
+  return head(g).y - y0;
+}
+
+test('vitesse : Normal par défaut, cadence historique de 120 ms inchangée', () => {
+  const g = loadGame();
+  assert.equal(g.api.getSpeed(), 'normal');
+  assert.equal(g.api.getTickMs(), 120);
+  assert.deepEqual(pressed(g), ['normal']);
+  assert.deepEqual(speedDisabled(g), [false, false, false], 'sélecteur actif avant le départ');
+  assert.equal(stepsIn(g, 1200), 10, '10 pas en 1200 ms');
+});
+
+for (const [id, ms] of [['slow', 180], ['normal', 120], ['fast', 80]]) {
+  test(`vitesse ${id} : un pas toutes les ${ms} ms, un seul minuteur`, () => {
+    const g = loadGame();
+    g.click(speedBtn(g, id));
+    assert.equal(g.api.getSpeed(), id);
+    assert.deepEqual(pressed(g), [id], 'un seul bouton enfoncé');
+    assert.equal(g.clock.count(), 0, 'choisir une vitesse ne démarre pas la partie');
+    assert.equal(stepsIn(g, ms * 5), 5);
+    assert.equal(stepsIn(g, ms - 1), 0, 'pas de pas anticipé');
+    assert.equal(g.clock.count(), 1);
+  });
+}
+
+test('vitesse : Rapide fait réellement plus de pas que Lent sur la même durée', () => {
+  const fast = loadGame();
+  fast.click(speedBtn(fast, 'fast'));
+  const slow = loadGame();
+  slow.click(speedBtn(slow, 'slow'));
+  assert.equal(stepsIn(fast, 720), 9);
+  assert.equal(stepsIn(slow, 720), 4);
+});
+
+test('vitesse : verrouillée pendant la partie, y compris en pause', () => {
+  const g = loadGame();
+  g.click(speedBtn(g, 'fast'));
+  g.key('ArrowUp');
+  assert.deepEqual(speedDisabled(g), [true, true, true]);
+  assert.match(g.els['speed-hint'].textContent, /Rapide.*verrouillée/);
+  g.key(' ');                                         // pause
+  assert.deepEqual(speedDisabled(g), [true, true, true], 'verrouillé en pause');
+  g.els['speed-slow'].disabled = false;               // même si le bouton était forcé
+  g.click(speedBtn(g, 'slow'));
+  assert.equal(g.api.getSpeed(), 'fast', 'demande ignorée pendant la partie');
+  assert.equal(g.clock.count(), 0, 'aucun minuteur relancé par le sélecteur en pause');
+  g.key(' ');                                         // reprise à la vitesse d'origine
+  assert.equal(g.clock.count(), 1);
+  const y0 = head(g).y;
+  g.clock.advance(80 * 3);
+  assert.equal(y0 - head(g).y, 3, 'toujours 80 ms par pas après la reprise');
+});
+
+test('vitesse : changeable en fin de partie, appliquée et conservée après Recommencer', () => {
+  const g = loadGame();
+  g.key('ArrowUp');
+  g.clock.advance(120 * 15);
+  assert.equal(g.api.getState().status, 'over');
+  assert.deepEqual(speedDisabled(g), [false, false, false], 'réactivé en fin de partie');
+  g.click(speedBtn(g, 'slow'));
+  assert.equal(g.api.getState().status, 'over', 'choisir ne relance pas la partie');
+  assert.equal(g.clock.count(), 0);
+  g.click(g.els.restart);
+  assert.equal(g.api.getSpeed(), 'slow', 'vitesse conservée au redémarrage');
+  assert.deepEqual(pressed(g), ['slow']);
+  assert.deepEqual(speedDisabled(g), [false, false, false], 'modifiable après le redémarrage');
+  g.click(speedBtn(g, 'fast'));
+  assert.equal(stepsIn(g, 400), 5, 'Rapide choisi après redémarrage : 80 ms par pas');
+});
+
+test('vitesse : changements répétés avant le départ, jamais deux boucles', () => {
+  const g = loadGame();
+  for (let i = 0; i < 30; i++) {
+    g.click(speedBtn(g, SPEED_IDS[i % 3]));
+    assert.equal(g.clock.count(), 0);
+  }
+  g.click(speedBtn(g, 'slow'));
+  g.key('ArrowUp');
+  assert.equal(g.clock.count(), 1);
+  for (let i = 0; i < 10; i++) { g.key(' '); g.key(' '); }
+  assert.equal(g.clock.count(), 1, 'pause/reprise ne crée qu\'un minuteur');
+  for (let i = 0; i < 20; i++) {
+    g.api.restart();
+    g.click(speedBtn(g, SPEED_IDS[i % 3]));
+    g.key('ArrowDown');
+    assert.equal(g.clock.count(), 1);
+  }
+});
+
+test('vitesse : Espace / Entrée sur un bouton focalisé passent par le click natif', () => {
+  const g = loadGame();
+  const ev = g.key(' ', { target: speedBtn(g, 'fast') });
+  assert.equal(ev.defaultPrevented, false, 'activation native du bouton conservée');
+  assert.equal(g.clock.count(), 0, 'Espace sur le sélecteur ne démarre rien');
+  const ev2 = g.key('Enter', { target: speedBtn(g, 'slow') });
+  assert.equal(ev2.defaultPrevented, false);
+  assert.equal(g.api.getSpeed(), 'normal', 'le keydown seul ne change pas la vitesse : c\'est le click natif qui le fait');
+});
+
+test('vitesse : un clic souris ne prend pas le focus', () => {
+  const g = loadGame();
+  for (const id of SPEED_IDS) {
+    const ev = { defaultPrevented: false, preventDefault() { this.defaultPrevented = true; } };
+    for (const fn of speedBtn(g, id).listeners.mousedown) fn(ev);
+    assert.equal(ev.defaultPrevented, true, id);
+  }
 });

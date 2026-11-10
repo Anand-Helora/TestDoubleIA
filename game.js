@@ -8,7 +8,6 @@
 
   var COLS = 20;
   var ROWS = 20;
-  var TICK_MS = 120;
 
   var canvas = document.getElementById('board');
   var ctx = canvas.getContext('2d');
@@ -27,11 +26,19 @@
     left: document.getElementById('dir-left'),
     right: document.getElementById('dir-right')
   };
+  // Sélecteur de vitesse (Issue #19) : un bouton bascule par vitesse.
+  var speedHint = document.getElementById('speed-hint');
+  var speedButtons = {};
+  SnakeLogic.SPEED_ORDER.forEach(function (id) {
+    speedButtons[id] = document.getElementById('speed-' + id);
+  });
 
   var state = null;
   var timer = null;   // un seul minuteur actif à la fois
   var started = false;
   var paused = false;
+  // Vitesse choisie, conservée d'une partie à l'autre (en mémoire uniquement).
+  var speed = SnakeLogic.DEFAULT_SPEED;
 
   // Record persistant ; reste en mémoire si localStorage est indisponible.
   var best = BestScore.createTracker(BestScore.getStorage(window));
@@ -48,7 +55,25 @@
 
   function startLoop() {
     stopLoop();
-    timer = setInterval(tick, TICK_MS);
+    timer = setInterval(tick, SnakeLogic.speedInterval(speed));
+  }
+
+  /** Vrai pendant une partie lancée (y compris en pause) : la vitesse y est verrouillée. */
+  function inProgress() {
+    return started && state.status === 'playing';
+  }
+
+  /**
+   * Change la vitesse. Accepté seulement avant le premier déplacement ou en fin
+   * de partie : pendant une partie (même en pause) la demande est ignorée, si
+   * bien que la cadence ne change jamais en cours de jeu et qu'aucun minuteur
+   * n'est créé ici. La nouvelle vitesse s'applique au prochain démarrage.
+   */
+  function setSpeed(id) {
+    if (!SnakeLogic.isSpeed(id) || inProgress()) return false;
+    speed = id;
+    updateControls();
+    return true;
   }
 
   function newGame() {
@@ -111,6 +136,18 @@
   function updateControls() {
     updatePauseButton();
     updateDirButtons();
+    updateSpeedButtons();
+  }
+
+  function updateSpeedButtons() {
+    var locked = inProgress();
+    for (var id in speedButtons) {
+      speedButtons[id].disabled = locked;
+      speedButtons[id].setAttribute('aria-pressed', id === speed ? 'true' : 'false');
+    }
+    speedHint.textContent = locked ?
+      'Vitesse ' + SnakeLogic.SPEEDS[speed].label + ' — verrouillée pendant la partie.' :
+      'Modifiable avant le premier déplacement ou en fin de partie.';
   }
 
   function updatePauseButton() {
@@ -232,6 +269,14 @@
   restartBtn.addEventListener('click', newGame);
   pauseBtn.addEventListener('click', togglePause);
 
+  Object.keys(speedButtons).forEach(function (id) {
+    var b = speedButtons[id];
+    b.addEventListener('click', function () { setSpeed(id); });
+    // Comme la croix : un clic souris ne prend pas le focus, pour que les
+    // flèches et Espace continuent de piloter le jeu juste après le choix.
+    b.addEventListener('mousedown', function (e) { e.preventDefault(); });
+  });
+
   Object.keys(dirButtons).forEach(function (dir) {
     var b = dirButtons[dir];
     // click couvre souris, toucher et activation clavier (Espace / Entrée sur le
@@ -255,6 +300,8 @@
     window.__snake = {
       getState: function () { return state; },
       isPaused: function () { return paused; },
+      getSpeed: function () { return speed; },
+      getTickMs: function () { return SnakeLogic.speedInterval(speed); },
       restart: newGame
     };
   }

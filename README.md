@@ -16,6 +16,7 @@ Ouvrir `index.html` dans un navigateur (double-clic, fonctionne aussi en `file:/
 | Déplacer | Flèches, ZQSD (AZERTY), WASD (QWERTY) ou croix directionnelle tactile sous le plateau |
 | Pause / reprise | Espace, ou bouton « Pause » / « Reprendre » sous le plateau (souris, tactile, clavier) |
 | Recommencer après une partie | Entrée ou bouton « Recommencer » |
+| Choisir la vitesse | Boutons « Lent », « Normal », « Rapide » au-dessus du plateau (souris, tactile, Tab + Espace / Entrée) |
 
 La partie démarre à la première touche de direction (clavier ou croix tactile).
 
@@ -33,6 +34,13 @@ La partie démarre à la première touche de direction (clavier ou croix tactile
   exactement les règles du clavier : même file de directions (demi-tour refusé), même minuteur unique.
   Elle est désactivée en pause et en fin de partie. Un clic souris ne lui donne pas le focus, pour
   qu'Espace continue de mettre en pause ; au clavier (Tab), Espace / Entrée activent le bouton focalisé.
+- Vitesse (sélecteur au-dessus du plateau) : **Lent** = 1 case toutes les 180 ms, **Normal** = 120 ms
+  (cadence historique, choisie par défaut), **Rapide** = 80 ms. Le choix est possible avant le premier
+  déplacement et en fin de partie ; il est conservé au redémarrage (en mémoire, pas dans `localStorage`).
+  Pendant une partie, pause comprise, le sélecteur est désactivé et toute demande est ignorée : la cadence
+  ne change jamais en cours de jeu et le sélecteur ne crée ni ne relance jamais de minuteur (un seul
+  minuteur, démarré au premier déplacement avec la vitesse choisie). Comme pour la croix, un clic souris ne
+  donne pas le focus aux boutons de vitesse, et le bouton sélectionné est signalé par `aria-pressed`.
 - Le meilleur score (« Record ») s'affiche à côté du score, se met à jour dès qu'il est dépassé
   et est conservé entre les sessions dans le `localStorage` du navigateur (clé `snake.bestScore`).
   Si le stockage est indisponible, bloqué ou contient une valeur invalide, le jeu reste jouable
@@ -44,9 +52,9 @@ La partie démarre à la première touche de direction (clavier ou croix tactile
 | --- | --- |
 | `index.html` | Page du jeu |
 | `style.css` | Mise en forme |
-| `snake.js` | Logique pure (déplacement, collisions, pommes, score), sans DOM |
+| `snake.js` | Logique pure (déplacement, collisions, pommes, score, vitesses), sans DOM |
 | `best-score.js` | Meilleur score : lecture/écriture protégées dans `localStorage`, validation des valeurs |
-| `game.js` | Rendu canvas, clavier, croix tactile, boucle de jeu, écran de fin |
+| `game.js` | Rendu canvas, clavier, croix tactile, sélecteur de vitesse, boucle de jeu, écran de fin |
 | `tests/snake.test.js` | Tests unitaires de la logique |
 | `tests/best-score.test.js` | Tests du meilleur score (validation, persistance simulée, erreurs de stockage) |
 | `tests/game.test.js` | Tests de l'interface `game.js` avec DOM et minuteurs simulés |

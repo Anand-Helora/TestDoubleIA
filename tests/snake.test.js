@@ -238,3 +238,29 @@ test('valeurs par défaut inchangées : 20×20, longueur 3, au centre', () => {
   assert.equal(st.rows, 20);
   assert.deepEqual(st.snake, [{ x: 10, y: 10 }, { x: 9, y: 10 }, { x: 8, y: 10 }]);
 });
+
+// --- Vitesses (Issue #19) ---
+
+test('vitesses : Lent > Normal > Rapide, Normal = 120 ms historique', () => {
+  assert.deepEqual(S.SPEED_ORDER, ['slow', 'normal', 'fast']);
+  assert.equal(S.DEFAULT_SPEED, 'normal');
+  assert.equal(S.speedInterval('slow'), 180);
+  assert.equal(S.speedInterval('normal'), 120);
+  assert.equal(S.speedInterval('fast'), 80);
+  assert.deepEqual(S.SPEED_ORDER.map((id) => S.SPEEDS[id].label), ['Lent', 'Normal', 'Rapide']);
+});
+
+test('vitesses : identifiant inconnu → refusé, cadence normale par défaut', () => {
+  for (const bad of [undefined, null, '', 'turbo', 'SLOW', 42, 'toString', '__proto__', 'constructor']) {
+    assert.equal(S.isSpeed(bad), false, String(bad));
+    assert.equal(S.speedInterval(bad), 120, String(bad));
+  }
+  for (const id of S.SPEED_ORDER) assert.equal(S.isSpeed(id), true);
+});
+
+test('vitesses : intervalles entiers positifs', () => {
+  for (const id of S.SPEED_ORDER) {
+    const ms = S.speedInterval(id);
+    assert.ok(Number.isInteger(ms) && ms > 0, id);
+  }
+});
