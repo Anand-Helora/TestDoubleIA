@@ -104,12 +104,20 @@ Points communs aux trois workflows Codex (détails dans
 [codex-feedback-dryrun.md](codex-feedback-dryrun.md), [codex-feedback-gate.md](codex-feedback-gate.md),
 [codex-status-bridge.md](codex-status-bridge.md)) :
 
-- ils extraient **le code de la branche par défaut**, jamais celui de la PR (`persist-credentials: false`,
-  extraction partielle de `tools/codex-feedback`) ;
+- sur un **événement automatique** (`issue_comment`, et pour le détecteur les événements de revue), ils
+  extraient **le code de la branche par défaut**, jamais celui de la PR (`persist-credentials: false`,
+  extraction partielle de `tools/codex-feedback`) ; les **jobs d'écriture** (`reserve`, `store-self-test`,
+  `publish`) extraient toujours la branche par défaut ;
+- **exception** : sur un lancement manuel `workflow_dispatch`, les jobs de lecture (détecteur, `analyze`
+  de B1 et de la passerelle de statut) extraient `github.ref`, c'est-à-dire la branche choisie dans
+  l'interface. Lancer manuellement ces workflows **uniquement depuis `main`** ;
 - ils revérifient l'identité complète du bot (login, identifiant `199175422`, type `Bot`,
   application `1144995`) et relisent tout via l'API au lieu de faire confiance à l'événement ;
-- ils n'acceptent que les PR du même dépôt, depuis une branche `claude/*`, dont l'auteur a un droit
-  `admin` ou `write`, sans label `codex-gate:stop` ;
+- **B1 et la passerelle de statut seulement** (garde-fous de `gate.js`) : PR du même dépôt, non fork,
+  depuis une branche `claude/*`, dont l'auteur a un droit `admin` ou `write`, sans label
+  `codex-gate:stop`. Le détecteur `codex-feedback-dryrun` (`detect.js`) **n'applique pas** ces
+  exclusions : il reste inoffensif parce qu'il n'écrit rien, mais ne doit pas être réutilisé seul
+  comme filtre de confiance ;
 - le texte des commentaires n'est jamais transmis à un shell, à un agent ni écrit dans un statut ;
 - la boucle est bornée : 2 cycles par PR (3e SHA porteur de remarques → arrêt, reprise humaine).
 
@@ -183,7 +191,7 @@ quelques remarques par semaine) et si la passerelle de statut s'avère inefficac
 | Zone | Niveau de confiance | Conséquence |
 | --- | --- | --- |
 | Personne propriétaire, branche `main` | Confiance | Seule source des décisions de fusion et de configuration |
-| Code exécuté par les workflows Codex | Confiance | Toujours le code de `main`, jamais celui de la PR |
+| Code exécuté par les workflows Codex | Confiance | Code de `main` pour les événements automatiques et les jobs d'écriture ; branche choisie pour un `workflow_dispatch` (à lancer depuis `main` uniquement) |
 | Code d'une PR `claude/*` | Non fiable jusqu'à relecture | Exécuté seulement par la CI `tests.yml`, en lecture seule |
 | Texte des commentaires (Codex compris), descriptions de PR, journaux CI | **Non fiable** | Jamais injecté dans un shell, un prompt automatique ou un statut ; risque d'injection de prompt |
 | PR issues d'un fork | Exclue | Refusées par les garde-fous (`HEAD_REPO_NOT_ALLOWED`) |

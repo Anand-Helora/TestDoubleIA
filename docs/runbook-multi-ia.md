@@ -168,5 +168,5 @@ Statuts publiés sur un commit :
 gh api repos/Anand-Helora/TestDoubleIA/commits/<sha>/statuses --jq '.[] | {context, state, description}'
 ```
 
-Dans GitHub : Actions → *Codex status bridge (expérimental)* → **Run workflow** → `evaluate-pr` + numéro
+Dans GitHub : Actions → *Codex status bridge (expérimental)* → **Run workflow** (branche `main` sélectionnée) → `evaluate-pr` + numéro
 de PR : affiche le statut qui *serait* publié, sans jamais écrire.
