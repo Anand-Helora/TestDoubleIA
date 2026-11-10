@@ -199,6 +199,15 @@ function sectionOf(body) {
   return m ? { section: `${m[1]}_review`, defaulted: false } : { section: 'code_review', defaulted: true };
 }
 
+/** Résumé Codex le plus récent (celui qui fait foi), ou null. */
+function latestCodexSummary(issueComments) {
+  if (!Array.isArray(issueComments)) return null;
+  const summaries = issueComments
+    .filter((c) => isCodexAuthored(c) && typeof c.body === 'string' && STATE_MARKER_RE.test(c.body))
+    .sort((a, b) => String(a.updated_at).localeCompare(String(b.updated_at)) || a.id - b.id);
+  return summaries.length ? summaries[summaries.length - 1] : null;
+}
+
 /**
  * Décision à partir des données API (fonction pure).
  * @param trigger  résultat de readTrigger (sans `stop`)
@@ -226,10 +235,7 @@ function analyze(trigger, api, options = {}) {
   const notes = [];
 
   // 1. Résumé Codex (commentaire de conversation) : le plus récent fait foi.
-  const summaries = api.issueComments
-    .filter((c) => isCodexAuthored(c) && typeof c.body === 'string' && STATE_MARKER_RE.test(c.body))
-    .sort((a, b) => String(a.updated_at).localeCompare(String(b.updated_at)) || a.id - b.id);
-  const summary = summaries.length ? summaries[summaries.length - 1] : null;
+  const summary = latestCodexSummary(api.issueComments);
   const state = summary ? parseReviewState(summary.body) : null;
   if (state && state.error) {
     return result(DECISION.UNVERIFIED, 'SUMMARY_STATE_UNREADABLE', { headSha, notes: [state.error] });
@@ -540,7 +546,7 @@ async function run(env, deps = {}) {
 
 module.exports = {
   CODEX, DECISION, MAX_FIX_CYCLES,
-  isCodexUser, isCodexAuthored, readTrigger, parseReviewState, analyze, evaluate,
+  isCodexUser, isCodexAuthored, readTrigger, parseReviewState, latestCodexSummary, analyze, evaluate,
   renderSummary, clean, idempotencyKey, fetchApiData, fetchThreads, buildThreadMap, normalizeId, loadFixture, fixturePath, run
 };
 

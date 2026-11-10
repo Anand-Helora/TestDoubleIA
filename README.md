@@ -83,3 +83,9 @@ Le crochet de test `window.__snake` n'est exposé qu'en ouvrant `index.html?test
   (1 tentative par SHA, 2 cycles par PR). **Aucun appel à Claude, aucun secret, aucune fusion** ; la
   réservation reste désactivée tant que la variable `CODEX_GATE_ENABLED` ne vaut pas `true`. Voir
   [docs/codex-feedback-gate.md](docs/codex-feedback-gate.md).
+- `.github/workflows/codex-status-bridge.yml` : passerelle **expérimentale et désactivée par défaut**
+  Codex → statut de commit `codex/verified-review` (Issue #17). Elle publie `failure` sur le SHA de tête
+  de la PR seulement pour une remarque Codex non résolue confirmée, `success` après une revue complète
+  propre, avec `statuses: write` comme seule écriture. Hypothèse **non prouvée** : Claude Code Web
+  Auto-fix réagirait à ce statut comme à une CI rouge. Aucune écriture tant que la variable
+  `CODEX_STATUS_BRIDGE_ENABLED` ne vaut pas `true`. Voir [docs/codex-status-bridge.md](docs/codex-status-bridge.md).
