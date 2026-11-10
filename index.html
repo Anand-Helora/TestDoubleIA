@@ -16,6 +16,14 @@
       </div>
     </header>
 
+    <div class="speed" role="group" aria-label="Vitesse" aria-describedby="speed-hint">
+      <span class="speed-title" aria-hidden="true">Vitesse</span>
+      <button id="speed-slow" class="speed-btn" type="button" data-speed="slow" aria-pressed="false">Lent</button>
+      <button id="speed-normal" class="speed-btn" type="button" data-speed="normal" aria-pressed="true">Normal</button>
+      <button id="speed-fast" class="speed-btn" type="button" data-speed="fast" aria-pressed="false">Rapide</button>
+    </div>
+    <p id="speed-hint" class="hint speed-hint">Modifiable avant le premier déplacement ou en fin de partie.</p>
+
     <div class="board-wrap">
       <canvas id="board" width="400" height="400" tabindex="0"
               aria-label="Plateau de jeu Snake"></canvas>
@@ -42,7 +50,7 @@
     <p id="message" class="message" aria-live="polite"></p>
 
     <p class="help">
-      Déplacements : flèches, ZQSD, WASD ou croix tactile · Pause : Espace ou bouton Pause · Recommencer : Entrée
+      Déplacements : flèches, ZQSD, WASD ou croix tactile · Pause : Espace ou bouton Pause · Vitesse : Lent, Normal ou Rapide avant le départ · Recommencer : Entrée
     </p>
   </main>
 

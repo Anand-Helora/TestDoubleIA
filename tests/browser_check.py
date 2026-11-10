@@ -21,7 +21,7 @@ from playwright.sync_api import sync_playwright
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 URL = (ROOT / "index.html").as_uri() + "?test"
-TICK = 120  # ms, doit correspondre à TICK_MS dans game.js
+TICK = 120  # ms, vitesse « Normal » par défaut (SnakeLogic.SPEEDS.normal dans snake.js)
 
 # Math.random() = 0 : chaque nouvelle pomme va sur la première case libre,
 # (0,0) en pratique, loin des trajets utilisés par les scénarios (colonne x=10).
@@ -520,6 +520,80 @@ def dpad_scenarios(browser):
     return failed
 
 
+def speed_scenarios(browser):
+    """Sélecteur de vitesse (Issue #19) : cadence réelle, verrouillage, toucher, clavier, mobile."""
+    context = browser.new_context(viewport={"width": 375, "height": 740}, has_touch=True)
+    page = context.new_page()
+    errors = []
+    page.on("pageerror", lambda e: errors.append(str(e)))
+    install_frozen_clock(page)
+    page.add_init_script(INIT_SCRIPT)
+    page.goto(URL)
+    freeze_clock(page)
+    run = Run(page)
+    head = lambda: run.state()["snake"][0]
+    ids = ("slow", "normal", "fast")
+    pressed = lambda: [i for i in ids if page.get_attribute(f"#speed-{i}", "aria-pressed") == "true"]
+    disabled = lambda: [page.is_disabled(f"#speed-{i}") for i in ids]
+
+    def steps_down(ms):
+        """Démarre vers le bas depuis le haut du plateau et compte les cases en `ms`."""
+        page.keyboard.press("ArrowDown")
+        run.setup([[10, 2], [9, 2], [8, 2]], [0, 0], "down")
+        y0 = head()["y"]
+        page.clock.run_for(ms)
+        return head()["y"] - y0
+
+    group = page.get_by_role("group", name="Vitesse")
+    run.check("groupe accessible « Vitesse » avec Lent / Normal / Rapide",
+              group.count() == 1 and all(group.get_by_role("button", name=n, exact=True).count() == 1
+                                         for n in ("Lent", "Normal", "Rapide")))
+    boxes = [page.locator(f"#speed-{i}").bounding_box() for i in ids]
+    run.check("mobile 375 px : cibles ≥ 44 px dans l'écran",
+              all(b["width"] >= 44 and b["height"] >= 44 and b["x"] >= 0 and b["x"] + b["width"] <= 375
+                  for b in boxes))
+    run.check("aucun défilement horizontal",
+              page.evaluate("document.documentElement.scrollWidth <= window.innerWidth"))
+    run.check("Normal sélectionné par défaut, sélecteur actif", pressed() == ["normal"] and disabled() == [False] * 3)
+
+    page.tap("#speed-fast")
+    run.check("toucher Rapide : sélectionné, partie non démarrée",
+              pressed() == ["fast"] and page.is_disabled("#pause"))
+    run.check("clic sur le sélecteur : le focus n'y reste pas",
+              not page.evaluate("document.activeElement.id").startswith("speed-"))
+    run.check("Rapide : 5 cases en 400 ms", steps_down(400) == 5)
+    run.check("partie lancée : sélecteur verrouillé", disabled() == [True] * 3)
+    page.keyboard.press(" ")
+    run.check("en pause : sélecteur toujours verrouillé", disabled() == [True] * 3)
+    page.tap("#speed-slow", force=True)
+    run.check("toucher Lent pendant la pause : ignoré", page.evaluate("window.__snake.getSpeed()") == "fast")
+    page.keyboard.press(" ")
+    y0 = head()["y"]
+    page.clock.run_for(240)
+    run.check("après reprise : toujours 80 ms par pas", head()["y"] - y0 == 3)
+
+    # Fin de partie : choix possible, appliqué au redémarrage
+    run.setup([[10, 18], [10, 17], [10, 16]], [0, 0], "down")
+    page.clock.run_for(80 * 2)
+    run.check("fin de partie : sélecteur réactivé", run.state()["status"] == "over" and disabled() == [False] * 3)
+    page.focus("#speed-slow")
+    page.keyboard.press("Enter")
+    run.check("Entrée sur Lent focalisé : Lent choisi sans relancer",
+              pressed() == ["slow"] and run.state()["status"] == "over")
+    page.tap("#restart")
+    run.check("redémarrage : Lent conservé et modifiable", pressed() == ["slow"] and disabled() == [False] * 3)
+    run.check("Lent : 4 cases en 720 ms", steps_down(720) == 4)
+
+    # Retour à Normal : comportement historique
+    page.evaluate("window.__snake.restart()")
+    page.tap("#speed-normal")
+    run.check("Normal : 6 cases en 720 ms (120 ms par pas)", steps_down(720) == 6)
+    run.check("aucune erreur JS (vitesse)", not errors)
+    failed = sum(not ok for _, ok in run.results)
+    context.close()
+    return failed
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--runs", type=int, default=1)
@@ -546,6 +620,9 @@ def main():
 
         print(f"Croix directionnelle tactile ({args.browser})")
         total_failed += dpad_scenarios(browser)
+
+        print(f"Sélecteur de vitesse ({args.browser})")
+        total_failed += speed_scenarios(browser)
 
         server, http_url = start_server()
         print(f"Meilleur score et stockage ({args.browser}, {http_url})")

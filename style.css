@@ -29,6 +29,35 @@ h1 { margin: 0; font-size: 1.6rem; letter-spacing: 0.04em; }
 .score span { font-weight: 700; color: #b5f05a; }
 .score.best span { color: #f2c94c; }
 
+/* Sélecteur de vitesse (Issue #19) */
+.speed {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.speed-title { font-size: 0.95rem; color: #9fb3a5; margin-right: 4px; }
+.speed-btn {
+  font: inherit;
+  font-size: 0.95rem;
+  min-width: 44px;
+  min-height: 44px; /* cible tactile ≥ 44 px */
+  padding: 6px 12px;
+  border: 2px solid #3a5544;
+  border-radius: 6px;
+  background: transparent;
+  color: #e8efe9;
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+.speed-btn[aria-pressed="true"] { border-color: #b5f05a; background: rgba(181, 240, 90, 0.18); font-weight: 700; }
+.speed-btn:hover:not(:disabled) { border-color: #b5f05a; }
+.speed-btn:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+.speed-btn:disabled { color: #6f8577; cursor: not-allowed; }
+.speed-btn[aria-pressed="true"]:disabled { color: #b8c9bd; border-color: #6f8577; background: rgba(181, 240, 90, 0.08); }
+.speed-hint { margin: 4px 0 8px; min-height: 1.2em; }
+
 .board-wrap { position: relative; }
 
 #board {
