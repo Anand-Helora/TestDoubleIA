@@ -417,6 +417,109 @@ def pause_button_scenarios(browser):
     return failed
 
 
+def dpad_scenarios(browser):
+    """Croix directionnelle tactile (Issue #15) : toucher réel, accessibilité, mobile."""
+    context = browser.new_context(viewport={"width": 375, "height": 740}, has_touch=True)
+    page = context.new_page()
+    errors = []
+    page.on("pageerror", lambda e: errors.append(str(e)))
+    install_frozen_clock(page)
+    page.add_init_script(INIT_SCRIPT)
+    page.goto(URL)
+    freeze_clock(page)
+    run = Run(page)
+    head = lambda: run.state()["snake"][0]
+    pad_disabled = lambda: [page.is_disabled(f"#dir-{d}") for d in ("up", "down", "left", "right")]
+
+    # Accessibilité et disposition mobile
+    group = page.get_by_role("group", name="Commandes de direction")
+    run.check("groupe accessible « Commandes de direction »", group.count() == 1)
+    run.check("quatre boutons nommés Haut / Bas / Gauche / Droite",
+              all(group.get_by_role("button", name=n, exact=True).count() == 1
+                  for n in ("Haut", "Bas", "Gauche", "Droite")))
+    boxes = {d: page.locator(f"#dir-{d}").bounding_box() for d in ("up", "down", "left", "right")}
+    pause_box = page.locator("#pause").bounding_box()
+    run.check("mobile 375 px : cibles ≥ 44 px, sous le bouton Pause, dans l'écran",
+              all(b["width"] >= 44 and b["height"] >= 44 and b["y"] + b["height"] <= 740
+                  and b["x"] >= 0 and b["x"] + b["width"] <= 375 for b in boxes.values())
+              and boxes["up"]["y"] >= pause_box["y"] + pause_box["height"])
+    run.check("disposition en croix",
+              boxes["up"]["y"] < boxes["left"]["y"] < boxes["down"]["y"]
+              and boxes["left"]["x"] < boxes["up"]["x"] < boxes["right"]["x"])
+    run.check("aucun défilement horizontal",
+              page.evaluate("document.documentElement.scrollWidth <= window.innerWidth"))
+    run.check("croix active avant le démarrage", pad_disabled() == [False] * 4)
+
+    # Premier toucher : démarrage
+    run.setup([[10, 15], [10, 16], [10, 17]], [0, 0], "right")
+    run.ticks(3)
+    run.check("aucun déplacement avant le premier toucher", head() == {"x": 10, "y": 15})
+    page.tap("#dir-up")
+    run.ticks(1)
+    run.check("toucher Haut : démarre et monte d'une case", head() == {"x": 10, "y": 14})
+    run.check("bouton Pause activé par le toucher", page.is_enabled("#pause"))
+
+    # Demi-tour refusé
+    page.tap("#dir-down")
+    run.ticks(1)
+    run.check("toucher Bas pendant la montée : demi-tour ignoré",
+              run.state()["direction"] == "up" and head() == {"x": 10, "y": 13})
+
+    # Les quatre directions
+    page.tap("#dir-left")
+    run.ticks(1)
+    run.check("toucher Gauche", head() == {"x": 9, "y": 13})
+    page.tap("#dir-down")
+    run.ticks(1)
+    run.check("toucher Bas", head() == {"x": 9, "y": 14})
+    page.tap("#dir-right")
+    run.ticks(1)
+    run.check("toucher Droite", head() == {"x": 10, "y": 14})
+
+    # Clic souris : le focus reste ailleurs, Espace met toujours en pause
+    page.focus("#board")
+    page.click("#dir-up")
+    run.check("clic souris : le focus ne passe pas sur la croix",
+              not page.evaluate("document.activeElement.id").startswith("dir-"))
+    page.keyboard.press(" ")
+    run.check("Espace après un clic sur la croix : pause", page.evaluate("window.__snake.isPaused()"))
+    run.check("croix désactivée pendant la pause", pad_disabled() == [True] * 4)
+    before = run.state()
+    page.tap("#dir-left", force=True)
+    run.ticks(3)
+    run.check("toucher pendant la pause : aucun effet",
+              run.state()["snake"] == before["snake"] and run.state()["queue"] == before["queue"])
+    page.tap("#pause")
+    run.check("reprise : croix réactivée", pad_disabled() == [False] * 4)
+    y0 = head()["y"]
+    run.ticks(3)
+    run.check("après reprise : 1 case par pas (un seul minuteur)", y0 - head()["y"] == 3)
+
+    # Clavier toujours fonctionnel, partage de la même file
+    page.keyboard.press("ArrowLeft")
+    run.ticks(1)
+    run.check("flèches clavier toujours actives", run.state()["direction"] == "left")
+
+    # Activation clavier d'un bouton focalisé (Tab)
+    page.focus("#dir-up")
+    page.keyboard.press("Enter")
+    run.ticks(1)
+    run.check("Entrée sur Haut focalisé : direction haut, sans pause",
+              run.state()["direction"] == "up" and not page.evaluate("window.__snake.isPaused()"))
+
+    # Fin de partie
+    run.setup([[10, 1], [10, 2], [10, 3]], [0, 0], "up")
+    run.ticks(2)
+    run.check("fin de partie : croix désactivée", run.state()["status"] == "over" and pad_disabled() == [True] * 4)
+    page.tap("#restart")
+    run.check("redémarrage : croix réactivée, en attente du premier toucher",
+              pad_disabled() == [False] * 4 and page.is_disabled("#pause"))
+    run.check("aucune erreur JS (croix tactile)", not errors)
+    failed = sum(not ok for _, ok in run.results)
+    context.close()
+    return failed
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--runs", type=int, default=1)
@@ -440,6 +543,9 @@ def main():
 
         print(f"Bouton Pause / Reprendre ({args.browser})")
         total_failed += pause_button_scenarios(browser)
+
+        print(f"Croix directionnelle tactile ({args.browser})")
+        total_failed += dpad_scenarios(browser)
 
         server, http_url = start_server()
         print(f"Meilleur score et stockage ({args.browser}, {http_url})")

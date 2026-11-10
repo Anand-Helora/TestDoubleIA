@@ -20,6 +20,13 @@
   var restartBtn = document.getElementById('restart');
   var pauseBtn = document.getElementById('pause');
   var pauseHint = document.getElementById('pause-hint');
+  // Croix directionnelle tactile : un bouton par direction (Issue #15).
+  var dirButtons = {
+    up: document.getElementById('dir-up'),
+    down: document.getElementById('dir-down'),
+    left: document.getElementById('dir-left'),
+    right: document.getElementById('dir-right')
+  };
 
   var state = null;
   var timer = null;   // un seul minuteur actif à la fois
@@ -52,7 +59,7 @@
     bestAtStart = best.get();
     overlay.hidden = true;
     updateScore();
-    updatePauseButton();
+    updateControls();
     setMessage('Appuyez sur une flèche (ou ZQSD / WASD) pour commencer.');
     draw();
     canvas.focus();
@@ -71,7 +78,7 @@
     overlay.hidden = false;
     var record = state.score > bestAtStart ? ' Nouveau record !' : '';
     setMessage('Score final : ' + state.score + '.' + record + ' Appuyez sur Entrée ou cliquez sur « Recommencer ».');
-    updatePauseButton();
+    updateControls();
     restartBtn.focus();
   }
 
@@ -90,7 +97,7 @@
       startLoop();
       setMessage('');
     }
-    updatePauseButton();
+    updateControls();
     draw();
   }
 
@@ -101,12 +108,43 @@
    * (« Reprendre, enfoncé »). Le changement d'état est aussi annoncé par la
    * zone aria-live du message.
    */
+  function updateControls() {
+    updatePauseButton();
+    updateDirButtons();
+  }
+
   function updatePauseButton() {
     var available = started && state.status === 'playing';
     pauseBtn.disabled = !available;
     pauseBtn.textContent = available && paused ? 'Reprendre' : 'Pause';
     pauseHint.textContent = available ? '' :
       (state.status === 'playing' ? 'Disponible une fois la partie commencée.' : 'Disponible pendant une partie.');
+  }
+
+  /**
+   * La croix directionnelle suit les mêmes règles que les touches de direction :
+   * utilisable avant le premier déplacement (elle démarre la partie) et pendant
+   * le jeu, désactivée en pause et en fin de partie.
+   */
+  function updateDirButtons() {
+    var available = state.status === 'playing' && !paused;
+    for (var dir in dirButtons) dirButtons[dir].disabled = !available;
+  }
+
+  /**
+   * Unique point d'entrée des changements de direction : clavier et croix
+   * tactile passent par ici. Le demi-tour reste refusé par SnakeLogic, et le
+   * minuteur n'est lancé qu'une fois, au premier déplacement.
+   */
+  function requestDirection(dir) {
+    if (state.status !== 'playing' || paused) return;
+    SnakeLogic.changeDirection(state, dir);
+    if (!started) {
+      started = true;
+      setMessage('');
+      startLoop();
+      updateControls();
+    }
   }
 
   function updateScore() {
@@ -187,20 +225,22 @@
     var dir = SnakeLogic.keyToDirection(e.key);
     if (!dir) return;
     e.preventDefault(); // évite le défilement de la page avec les flèches
-    if (paused) return;
-
-    SnakeLogic.changeDirection(state, dir);
-    if (!started) {
-      started = true;
-      setMessage('');
-      startLoop();
-      updatePauseButton();
-    }
+    requestDirection(dir);
   }
 
   document.addEventListener('keydown', onKeyDown);
   restartBtn.addEventListener('click', newGame);
   pauseBtn.addEventListener('click', togglePause);
+
+  Object.keys(dirButtons).forEach(function (dir) {
+    var b = dirButtons[dir];
+    // click couvre souris, toucher et activation clavier (Espace / Entrée sur le
+    // bouton focalisé) ; touch-action: manipulation (CSS) supprime le délai tactile.
+    b.addEventListener('click', function () { requestDirection(dir); });
+    // Un clic souris ne prend pas le focus : Espace continue de mettre en pause
+    // au lieu de réactiver le dernier bouton de direction utilisé.
+    b.addEventListener('mousedown', function (e) { e.preventDefault(); });
+  });
 
   // Met la partie en pause si l'onglet passe en arrière-plan.
   document.addEventListener('visibilitychange', function () {
