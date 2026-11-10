@@ -97,3 +97,6 @@ Le crochet de test `window.__snake` n'est exposé qu'en ouvrant `index.html?test
   propre, avec `statuses: write` comme seule écriture. Hypothèse **non prouvée** : Claude Code Web
   Auto-fix réagirait à ce statut comme à une CI rouge. Aucune écriture tant que la variable
   `CODEX_STATUS_BRIDGE_ENABLED` ne vaut pas `true`. Voir [docs/codex-status-bridge.md](docs/codex-status-bridge.md).
+
+Méthode réutilisable : [architecture multi-IA](docs/architecture-multi-ia.md) ·
+[checklist nouveau projet](docs/checklist-nouveau-projet.md) · [guide quotidien](docs/runbook-multi-ia.md).
