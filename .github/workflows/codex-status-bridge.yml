@@ -1,0 +1,115 @@
+# Passerelle EXPÉRIMENTALE Codex → statut de commit GitHub (Issue #17).
+# Hypothèse non prouvée : Claude Code Web Auto-fix réagirait à un statut `failure` comme à une CI rouge.
+# AUCUN appel à Claude ni à une API d'IA, aucun secret, aucune modification de fichier, de branche ou de ref.
+# Désactivée par défaut : aucune écriture tant que vars.CODEX_STATUS_BRIDGE_ENABLED ne vaut pas exactement 'true'.
+# Documentation : docs/codex-status-bridge.md
+name: Codex status bridge (expérimental)
+
+on:
+  # issue_comment exécute toujours la version du workflow de la branche par défaut :
+  # le code d'une PR ne peut pas modifier cette passerelle.
+  issue_comment:
+    types: [created, edited]
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: demo (hors ligne) ou evaluate-pr (lecture seule, jamais de publication)
+        required: true
+        type: choice
+        default: demo
+        options:
+          - demo
+          - evaluate-pr
+      pr_number:
+        description: Numéro de PR (mode evaluate-pr)
+        required: false
+        type: string
+
+# Aucune permission par défaut : chaque job déclare le strict nécessaire.
+permissions: {}
+
+jobs:
+  analyze:
+    name: Analyse (lecture seule)
+    # Pré-filtre : résumé publié ET envoyé par le compte bot Codex sur une PR ouverte.
+    # status-bridge.js revérifie l'identité complète (login, identifiant, type, application) via l'API.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'issue_comment' && github.event.issue.pull_request &&
+       github.event.issue.state == 'open' &&
+       github.event.comment.user.login == 'chatgpt-codex-connector[bot]' &&
+       github.event.sender.login == 'chatgpt-codex-connector[bot]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+      issues: read
+    outputs:
+      eligible: ${{ steps.bridge.outputs.eligible }}
+      pr_number: ${{ steps.bridge.outputs.pr_number }}
+      head_sha: ${{ steps.bridge.outputs.head_sha }}
+      target: ${{ steps.bridge.outputs.target }}
+    steps:
+      # Code de confiance uniquement : branche par défaut (jamais le code de la PR).
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'issue_comment' && github.event.repository.default_branch || github.ref }}
+          persist-credentials: false
+          sparse-checkout: |
+            tools/codex-feedback
+          sparse-checkout-cone-mode: true
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Évaluer la revue Codex et la cible du statut
+        id: bridge
+        env:
+          BRIDGE_PHASE: ${{ inputs.mode == 'demo' && 'demo' || 'analyze' }}
+          GITHUB_TOKEN: ${{ github.token }}   # jeton automatique, limité aux lectures ci-dessus
+          CODEX_STATUS_BRIDGE_ENABLED: ${{ vars.CODEX_STATUS_BRIDGE_ENABLED }}
+        run: node tools/codex-feedback/status-bridge.js
+
+  publish:
+    name: Publication du statut codex/verified-review
+    needs: analyze
+    # Interrupteur dédié : variable de dépôt CODEX_STATUS_BRIDGE_ENABLED (absente = aucune écriture).
+    if: >-
+      github.event_name == 'issue_comment' &&
+      needs.analyze.outputs.eligible == 'true' &&
+      vars.CODEX_STATUS_BRIDGE_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      statuses: write        # seule écriture : POST /repos/{owner}/{repo}/statuses/{sha}
+      contents: read         # extraction du code de confiance (branche par défaut)
+      pull-requests: read    # relecture de la PR, des revues et des fils
+      issues: read           # relecture du résumé Codex
+    # Publications sérialisées par PR : chaque exécution réévalue l'état réel avant d'écrire.
+    concurrency:
+      group: codex-status-bridge-${{ needs.analyze.outputs.pr_number }}
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+          sparse-checkout: |
+            tools/codex-feedback
+          sparse-checkout-cone-mode: true
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Revérifier la PR et publier le statut sur le SHA de tête
+        env:
+          BRIDGE_PHASE: publish
+          GITHUB_TOKEN: ${{ github.token }}
+          CODEX_STATUS_BRIDGE_ENABLED: ${{ vars.CODEX_STATUS_BRIDGE_ENABLED }}
+          BRIDGE_PR_NUMBER: ${{ needs.analyze.outputs.pr_number }}
+          BRIDGE_HEAD_SHA: ${{ needs.analyze.outputs.head_sha }}
+          BRIDGE_TARGET: ${{ needs.analyze.outputs.target }}
+        run: node tools/codex-feedback/status-bridge.js
