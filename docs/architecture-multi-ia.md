@@ -59,7 +59,7 @@ flowchart TD
     X -.->|"résumé Codex"| BR
     X -.-> GATE
     BR -->|"success : prouvé PR 20"| ST
-    BR -.->|"failure : jamais observé"| ST
+    BR -.->|"failure : calculé PR 22, jamais publié"| ST
     ST -.->|"réveil Auto-fix : NON PROUVÉ"| C
     H ==>|"5. fusion manuelle"| MAIN
     MAIN -->|"publication"| PAGES
@@ -80,7 +80,8 @@ flowchart TD
 | Passerelle B1 `codex-feedback-gate` (garde-fous, réservation atomique) | **Expérimental, désactivé** | PR [#10](https://github.com/Anand-Helora/TestDoubleIA/pull/10) ; `CODEX_GATE_ENABLED` doit rester absente ou `false` |
 | Passerelle de statut : démonstration hors ligne | **Prouvé hors ligne** | PR [#18](https://github.com/Anand-Helora/TestDoubleIA/pull/18) ; `BRIDGE_PHASE=demo` joue 20 scénarios |
 | Passerelle de statut : `success` publié sur le SHA de tête à partir d'un vrai résumé Codex | **Prouvé une fois** | PR [#20](https://github.com/Anand-Helora/TestDoubleIA/pull/20), SHA `0d5c86f`, exécution [42784932500](https://github.com/Anand-Helora/TestDoubleIA/actions/runs/42784932500) |
-| Passerelle de statut : `failure` publié à partir d'un **vrai** finding Codex | **Non prouvé** | Aucun finding Codex réel n'est survenu depuis la fusion de la PR #18 |
+| Passerelle de statut : verdict `failure` **calculé** à partir d'un vrai finding Codex | **Observé une fois, sans publication** | PR [#22](https://github.com/Anand-Helora/TestDoubleIA/pull/22) (cette PR), SHA `faa2afc`, exécution [42787004523](https://github.com/Anand-Helora/TestDoubleIA/actions/runs/42787004523) : `wouldPublish: failure`, puis `SKIP BRIDGE_DISABLED` car `CODEX_STATUS_BRIDGE_ENABLED` valait `false` |
+| Passerelle de statut : `failure` **publié** à partir d'un vrai finding Codex | **Non prouvé** | Jamais publié : interrupteur désactivé lors du seul finding réel observé |
 | Auto-fix se réveille sur un statut `failure` publié par GitHub Actions | **Non prouvé (hypothèse)** | Dépendance externe : comportement de Claude Code Web, non documenté ; filtrage possible des événements de bots |
 | Auto-fix réagit directement à un commentaire du bot Codex | **Non prouvé** | Signalements publics de filtrage des bots ([anthropics/claude-code#62977](https://github.com/anthropics/claude-code/issues/62977), [#62096](https://github.com/anthropics/claude-code/issues/62096)) |
 | Dossier de transmission B2 sans API (PR [#13](https://github.com/Anand-Helora/TestDoubleIA/pull/13)) | **Non fusionné, repli historique** | PR ouverte, en conflit avec `main` ; voir section 7 |
