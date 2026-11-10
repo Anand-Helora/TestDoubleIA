@@ -13,11 +13,11 @@ Ouvrir `index.html` dans un navigateur (double-clic, fonctionne aussi en `file:/
 
 | Action | Touches |
 | --- | --- |
-| Déplacer | Flèches, ZQSD (AZERTY) ou WASD (QWERTY) |
+| Déplacer | Flèches, ZQSD (AZERTY), WASD (QWERTY) ou croix directionnelle tactile sous le plateau |
 | Pause / reprise | Espace, ou bouton « Pause » / « Reprendre » sous le plateau (souris, tactile, clavier) |
 | Recommencer après une partie | Entrée ou bouton « Recommencer » |
 
-La partie démarre à la première touche de direction.
+La partie démarre à la première touche de direction (clavier ou croix tactile).
 
 ### Règles
 
@@ -29,6 +29,10 @@ La partie démarre à la première touche de direction.
 - Le bouton « Pause » est désactivé avant le premier déplacement et en fin de partie. Il partage
   l'état de la touche Espace et de la pause automatique au changement d'onglet : un seul état de pause,
   un seul minuteur.
+- La croix directionnelle (boutons « Haut », « Bas », « Gauche », « Droite », cibles de 52 px) suit
+  exactement les règles du clavier : même file de directions (demi-tour refusé), même minuteur unique.
+  Elle est désactivée en pause et en fin de partie. Un clic souris ne lui donne pas le focus, pour
+  qu'Espace continue de mettre en pause ; au clavier (Tab), Espace / Entrée activent le bouton focalisé.
 - Le meilleur score (« Record ») s'affiche à côté du score, se met à jour dès qu'il est dépassé
   et est conservé entre les sessions dans le `localStorage` du navigateur (clé `snake.bestScore`).
   Si le stockage est indisponible, bloqué ou contient une valeur invalide, le jeu reste jouable
@@ -42,7 +46,7 @@ La partie démarre à la première touche de direction.
 | `style.css` | Mise en forme |
 | `snake.js` | Logique pure (déplacement, collisions, pommes, score), sans DOM |
 | `best-score.js` | Meilleur score : lecture/écriture protégées dans `localStorage`, validation des valeurs |
-| `game.js` | Rendu canvas, clavier, boucle de jeu, écran de fin |
+| `game.js` | Rendu canvas, clavier, croix tactile, boucle de jeu, écran de fin |
 | `tests/snake.test.js` | Tests unitaires de la logique |
 | `tests/best-score.test.js` | Tests du meilleur score (validation, persistance simulée, erreurs de stockage) |
 | `tests/game.test.js` | Tests de l'interface `game.js` avec DOM et minuteurs simulés |

@@ -39,7 +39,11 @@ function loadGame({ search = '?test', random = () => 0, setupWindow = null } = {
     overlay: fakeElement(), 'overlay-title': fakeElement(),
     restart: fakeElement({ tagName: 'BUTTON', disabled: false }),
     pause: fakeElement({ tagName: 'BUTTON', disabled: true, textContent: 'Pause' }),
-    'pause-hint': fakeElement()
+    'pause-hint': fakeElement(),
+    'dir-up': fakeElement({ tagName: 'BUTTON', disabled: false }),
+    'dir-down': fakeElement({ tagName: 'BUTTON', disabled: false }),
+    'dir-left': fakeElement({ tagName: 'BUTTON', disabled: false }),
+    'dir-right': fakeElement({ tagName: 'BUTTON', disabled: false })
   };
   const docListeners = {};
   doc = {
@@ -484,4 +488,137 @@ test('fin de partie puis Recommencer : état du bouton correct et record conserv
   assert.equal(g.els.score.textContent, '0');
   assert.equal(g.els.best.textContent, '2');
   assert.equal(g.clock.count(), 0);
+});
+
+// --- Croix directionnelle tactile (Issue #15) ---
+
+const DIRS = ['up', 'down', 'left', 'right'];
+const pad = (g, dir) => g.els['dir-' + dir];
+const padDisabled = (g) => DIRS.map((d) => pad(g, d).disabled);
+
+test('croix tactile : active avant le démarrage, le premier toucher lance la partie', () => {
+  const g = loadGame();
+  assert.deepEqual(padDisabled(g), [false, false, false, false]);
+  assert.equal(g.clock.count(), 0);
+  g.click(pad(g, 'up'));
+  assert.equal(g.clock.count(), 1, 'un seul minuteur lancé');
+  assert.equal(g.els.message.textContent, '');
+  assert.deepEqual(btn(g), { disabled: false, label: 'Pause' }, 'bouton Pause activé');
+  const h0 = head(g);
+  g.clock.advance(120);
+  assert.deepEqual(head(g), { x: h0.x, y: h0.y - 1 }, 'monte d\'une case');
+});
+
+test('croix tactile : les quatre directions déplacent le serpent', () => {
+  const g = loadGame();
+  g.api.getState().food = { x: 0, y: 0 };
+  const moves = [['up', 0, -1], ['left', -1, 0], ['down', 0, 1], ['right', 1, 0]];
+  for (const [dir, dx, dy] of moves) {
+    const h = head(g);
+    g.click(pad(g, dir));
+    g.clock.advance(120);
+    assert.equal(g.api.getState().direction, dir);
+    assert.deepEqual(head(g), { x: h.x + dx, y: h.y + dy }, dir);
+  }
+  assert.equal(g.clock.count(), 1, 'toujours un seul minuteur');
+});
+
+test('croix tactile : demi-tour immédiat refusé, y compris avec deux touchers rapides', () => {
+  const g = loadGame();
+  g.click(pad(g, 'up'));
+  g.clock.advance(120);
+  g.click(pad(g, 'down'));                              // demi-tour direct
+  g.clock.advance(120);
+  assert.equal(g.api.getState().direction, 'up');
+  assert.equal(g.api.getState().status, 'playing');
+
+  // Gauche puis droite pendant le même pas : droite est un demi-tour par rapport à gauche.
+  g.click(pad(g, 'left'));
+  g.click(pad(g, 'right'));
+  g.clock.advance(120);
+  assert.equal(g.api.getState().direction, 'left');
+  g.clock.advance(120);
+  assert.equal(g.api.getState().direction, 'left');
+  assert.equal(g.api.getState().status, 'playing');
+});
+
+test('croix tactile : désactivée et sans effet pendant la pause, réactivée à la reprise', () => {
+  const g = loadGame();
+  g.click(pad(g, 'up'));
+  g.click(g.els.pause);
+  assert.deepEqual(padDisabled(g), [true, true, true, true]);
+  // Même si un événement arrivait malgré tout, la direction ne change pas.
+  for (const fn of pad(g, 'left').listeners.click) fn({ type: 'click' });
+  assert.deepEqual([...g.api.getState().queue], ['up'], 'file de directions inchangée');
+  assert.equal(g.clock.count(), 0, 'aucun minuteur relancé par la croix');
+  g.click(g.els.pause);
+  assert.deepEqual(padDisabled(g), [false, false, false, false]);
+  assert.equal(g.clock.count(), 1);
+
+  g.key(' ');                                           // pause au clavier : même état
+  assert.deepEqual(padDisabled(g), [true, true, true, true]);
+  g.setHidden(true);
+  g.key(' ');
+  assert.deepEqual(padDisabled(g), [false, false, false, false]);
+});
+
+test('croix tactile : désactivée en fin de partie, réactivée au redémarrage', () => {
+  const g = loadGame();
+  g.click(pad(g, 'up'));
+  g.clock.advance(120 * 20);                            // mur du haut
+  assert.equal(g.api.getState().status, 'over');
+  assert.deepEqual(padDisabled(g), [true, true, true, true]);
+  for (const fn of pad(g, 'down').listeners.click) fn({ type: 'click' });
+  assert.equal(g.api.getState().status, 'over');
+  assert.equal(g.clock.count(), 0);
+  g.click(g.els.restart);
+  assert.deepEqual(padDisabled(g), [false, false, false, false]);
+  assert.equal(g.clock.count(), 0, 'attend le premier déplacement');
+});
+
+test('croix tactile et clavier partagent la file de directions et le minuteur', () => {
+  const g = loadGame();
+  g.key('ArrowUp');
+  g.click(pad(g, 'left'));                              // pendant le même pas que la touche
+  assert.equal(g.clock.count(), 1);
+  g.clock.advance(120);
+  assert.equal(g.api.getState().direction, 'up');
+  g.clock.advance(120);
+  assert.equal(g.api.getState().direction, 'left');
+  g.key('ArrowRight');                                  // demi-tour au clavier après la croix
+  g.clock.advance(120);
+  assert.equal(g.api.getState().direction, 'left');
+  for (let i = 0; i < 5; i++) { g.click(pad(g, 'up')); g.click(pad(g, 'left')); }
+  assert.equal(g.clock.count(), 1, 'touchers répétés : un seul minuteur');
+});
+
+test('croix tactile : Espace / Entrée sur un bouton focalisé passent par le click natif', () => {
+  const g = loadGame();
+  g.click(pad(g, 'up'));
+  const ev = g.key(' ', { target: pad(g, 'left') });
+  assert.equal(ev.defaultPrevented, false, 'activation native préservée');
+  assert.equal(g.api.isPaused(), false, 'Espace sur la croix ne met pas en pause');
+  g.click(pad(g, 'left'));                              // click natif qui suit
+  g.clock.advance(240);
+  assert.equal(g.api.getState().direction, 'left');
+});
+
+test('croix tactile : un clic souris ne prend pas le focus', () => {
+  const g = loadGame();
+  for (const dir of DIRS) {
+    const ev = { defaultPrevented: false, preventDefault() { this.defaultPrevented = true; } };
+    for (const fn of pad(g, dir).listeners.mousedown || []) fn(ev);
+    assert.equal(ev.defaultPrevented, true, dir);
+  }
+});
+
+test('croix tactile : le record est mis à jour comme au clavier', () => {
+  const storage = memoryStorage();
+  const g = loadGame({ setupWindow: (w) => { w.localStorage = storage; } });
+  g.api.getState().food = { x: 0, y: 0 };
+  g.click(pad(g, 'up'));
+  eatApples(g, 2);
+  assert.equal(g.els.score.textContent, '2');
+  assert.equal(g.els.best.textContent, '2');
+  assert.equal(storage.data[BEST_KEY], '2');
 });
