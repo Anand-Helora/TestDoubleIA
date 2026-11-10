@@ -5,6 +5,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-test('autofix-smoke : 1 + 1 === 2', () => {
+test('Auto-fix : vérification après correction', () => {
   assert.equal(1 + 1, 2);
 });
